@@ -5,6 +5,10 @@ import PackageDescription
 let package = Package(
     name: "Recast",
     platforms: [.macOS(.v26)],
+    dependencies: [
+        // In-app updates (release builds only; see build.sh). Pinned: bump deliberately.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         // LAME 3.100 MP3 encoder (LGPL), vendored unmodified.
         .target(
@@ -40,7 +44,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "Recast",
-            dependencies: ["RecastCore"],
+            dependencies: ["RecastCore", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/Recast",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

@@ -26,6 +26,9 @@ struct RecastApp: App {
         }
         .defaultSize(width: 860, height: 560)
         .commands {
+            if let updates = Updates.shared {
+                CommandGroup(after: .appInfo) { UpdateCommands(updates: updates) }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Add Files…") { model.chooseFiles() }
                     .keyboardShortcut("o")

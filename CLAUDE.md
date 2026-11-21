@@ -104,3 +104,8 @@ These rules apply when working in a Git repository, including non-software work.
   `OMSO_PROVENANCE.md`.
 - Tests and experiments use generated fixtures or copies in temporary folders. Never point conversions at the
   user's own files in place.
+- In-app updates use Sparkle, pinned in `Package.swift`. Only release builds (`UPDATE_FEED_URL` and
+  `UPDATE_PUBLIC_KEY` set) contain an updater; keep plain and omso Builder builds without one. `CFBundleVersion`
+  is `VERSION`, which Sparkle compares, so bump `VERSION` for every release. Releases go through `release.py` in
+  the `software-site` repository; after changing Sparkle or `build.sh`, run `sh scripts/test-update.sh recast`
+  there. Never commit signing keys.
