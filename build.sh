@@ -30,6 +30,8 @@ cp "$bindir/Recast" "$app/Contents/MacOS/Recast"
 framework="$app/Contents/Frameworks/Sparkle.framework"
 ditto "$bindir/Sparkle.framework" "$framework"
 rm -rf "$framework/XPCServices" "$framework/Versions/B/XPCServices"
+# LAME (GNU LGPL) as its own, replaceable library, with its licence and where to get its source (Packages/Lame).
+cp "$bindir/libmp3lame.dylib" "$app/Contents/Frameworks/libmp3lame.dylib"
 if ! otool -l "$app/Contents/MacOS/Recast" | grep -q "@executable_path/../Frameworks"; then
   install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/Recast"
 fi
@@ -39,7 +41,8 @@ if [ -n "$feed" ]; then
   <key>SUPublicEDKey</key><string>$key</string>"
 fi
 if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"; fi
-cp Sources/CLame/COPYING "$app/Contents/Resources/LAME-COPYING.txt"
+cp Packages/Lame/Sources/CLame/COPYING "$app/Contents/Resources/LAME-COPYING.txt"
+cp Packages/Lame/NOTICE.txt "$app/Contents/Resources/LAME-NOTICE.txt"
 cp "Sources/COggVorbis/libvorbis-1.3.7/COPYING" "$app/Contents/Resources/libvorbis-COPYING.txt"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -80,6 +83,7 @@ sign_code() {
     codesign --force --sign "$sign" --options runtime --timestamp "$1"
   fi
 }
+sign_code "$app/Contents/Frameworks/libmp3lame.dylib"
 sign_code "$framework/Versions/B/Autoupdate"
 sign_code "$framework/Versions/B/Updater.app"
 sign_code "$framework"

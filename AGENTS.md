@@ -100,8 +100,10 @@ These rules apply when working in a Git repository, including non-software work.
   changes, dropped cover art) as an outcome note so the row shows it.
 - When adding or changing format support, update the README format table and add a fixture-based test: lossless
   formats must round-trip bit-exactly; compressed formats must line up with the source and keep tags and cover art.
-- Vendored codecs (`Sources/CLame`, `Sources/COggVorbis`) stay unmodified; record any update in their
-  `OMSO_PROVENANCE.md`.
+- Vendored codecs (`Packages/Lame/Sources/CLame`, `Sources/COggVorbis`) stay unmodified; record any update in
+  their `OMSO_PROVENANCE.md`.
+- LAME (GNU LGPL) stays its own dynamic library, `libmp3lame.dylib` in `Contents/Frameworks`, shipped with
+  `LAME-COPYING.txt` and `LAME-NOTICE.txt`. Never link it statically into Recast or another target.
 - Tests and experiments use generated fixtures or copies in temporary folders. Never point conversions at the
   user's own files in place.
 - In-app updates use Sparkle, pinned in `Package.swift`. Only release builds (`UPDATE_FEED_URL` and

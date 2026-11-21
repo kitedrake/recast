@@ -1,0 +1,12 @@
+Recast's MP3 encoder: LAME 3.100
+
+Recast encodes MP3 with LAME 3.100 (https://lame.sourceforge.io), unmodified, under the GNU Library General Public
+License, version 2 (LAME-COPYING.txt, next to this file). LAME is not part of Recast's own program: it is the
+separate library Recast.app/Contents/Frameworks/libmp3lame.dylib, which Recast loads when it starts.
+
+You may replace that library with your own build of LAME 3.100's interface. Because the app is code-signed, re-sign
+it afterwards, for example: codesign --force --deep --sign - Recast.app
+
+Source: the exact LAME source Recast uses, with its build settings, is in Recast's source repository under
+Packages/Lame (https://github.com/omsomso/recast). It is the official lame-3.100.tar.gz release
+(SHA-256 ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e), unmodified.

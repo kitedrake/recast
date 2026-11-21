@@ -31,9 +31,13 @@ set to match your theme.*
 
 Recast's own code is open source under the GNU General Public License, version 3 or later (`LICENSE`).
 Copyright (C) 2026 omso. The bundled encoders keep their own licences: LAME 3.100 is under the GNU LGPL
-version 2 (`Sources/CLame/COPYING`), and libogg and libvorbis are under Xiph.Org's BSD-style licence
-(`Sources/COggVorbis/libvorbis-1.3.7/COPYING`). See Known limits for what the LGPL asks before a built app
-is shared.
+version 2 (`Packages/Lame/Sources/CLame/COPYING`), and libogg and libvorbis are under Xiph.Org's BSD-style
+licence (`Sources/COggVorbis/libvorbis-1.3.7/COPYING`).
+
+LAME is built as its own dynamic library, `libmp3lame.dylib` (`Packages/Lame`), which the app carries in
+`Contents/Frameworks` and links at launch; Recast's own binary contains none of LAME's code. Anyone can swap in
+their own build of LAME 3.100's interface (then re-sign the app). The app also carries LAME's licence
+(`LAME-COPYING.txt`) and `LAME-NOTICE.txt`, which says where the exact source is, as the LGPL asks.
 
 ## Formats
 
@@ -147,8 +151,8 @@ captures because the app starts in the background.
 - When macOS decodes Ogg Vorbis written by Recast, the audio comes out 128 samples (3 ms) early. The files come
   straight from libvorbis; other players haven't been checked.
 - CAF files get no cover art (Core Audio's info chunk has no field for it). WAV tags are skipped for RF64 files.
-- LAME is linked statically, which is fine for local use. Before distributing Recast, build LAME as a separate
-  dynamic library (as omso DAW does) to meet the LGPL, and include its licence and source.
+- If `libmp3lame.dylib` is missing from the app, macOS won't start it (the library is linked, not loaded on
+  demand).
 
 ## Layout
 
@@ -163,7 +167,8 @@ Sources/RecastCore/         engine, no UI
   OutputPlanner.swift       output names and folders, collisions, folder scanning
   Encoders/                 Core Audio, FLAC (short-file fallback), LAME MP3, libvorbis and Opus-in-Ogg
   Tags/                     ID3, Vorbis comments/FLAC, MP4, WAV/AIFF chunks
-Sources/CLame/              LAME 3.100 encoder, vendored unmodified (see OMSO_PROVENANCE.md)
+Packages/Lame/              LAME 3.100 encoder, vendored unmodified (see OMSO_PROVENANCE.md), built as
+                            libmp3lame.dylib; NOTICE.txt goes into the app
 Sources/COggVorbis/         libogg + libvorbis 1.3.7 as bundled with JUCE (see OMSO_PROVENANCE.md)
 Sources/Recast/             SwiftUI app: list, bar, settings, command line, self-test, snapshots
 Tests/RecastCoreTests/      generated fixtures and engine tests

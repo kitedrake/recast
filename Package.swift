@@ -8,22 +8,11 @@ let package = Package(
     dependencies: [
         // In-app updates (release builds only; see build.sh). Pinned: bump deliberately.
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+        // LAME 3.100 MP3 encoder (LGPL), vendored unmodified and built as its own dynamic library (libmp3lame.dylib)
+        // so it stays separate and replaceable, as the LGPL asks. See Packages/Lame.
+        .package(path: "Packages/Lame"),
     ],
     targets: [
-        // LAME 3.100 MP3 encoder (LGPL), vendored unmodified.
-        .target(
-            name: "CLame",
-            path: "Sources/CLame",
-            exclude: ["COPYING", "LICENSE", "README", "OMSO_PROVENANCE.md", "config"],
-            sources: ["libmp3lame"],
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("HAVE_CONFIG_H"),
-                .headerSearchPath("config"),
-                .headerSearchPath("libmp3lame"),
-                .unsafeFlags(["-w"]),
-            ]
-        ),
         // libogg + libvorbis 1.3.7 (BSD), as bundled with JUCE.
         .target(
             name: "COggVorbis",
@@ -38,7 +27,7 @@ let package = Package(
         ),
         .target(
             name: "RecastCore",
-            dependencies: ["CLame", "COggVorbis"],
+            dependencies: [.product(name: "mp3lame", package: "Lame"), "COggVorbis"],
             path: "Sources/RecastCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
