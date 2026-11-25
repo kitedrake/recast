@@ -13,8 +13,8 @@ let space = CGColorSpaceCreateDeviceRGB()
 
 // MARK: Family style
 // The sibling apps' icon scripts share this part word for word: a solid colour tile shaded slightly lighter at the
-// top, one bold cream symbol with a gold accent, and a small kite tail in the lower-right corner. Only `tile` and the
-// symbol differ between apps. Change all of them together.
+// top and one bold cream symbol with a gold accent. Only `tile` and the symbol differ between apps. Change all of them
+// together.
 
 func rgb(_ hex: UInt32, alpha: CGFloat = 1) -> CGColor {
     CGColor(red: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
@@ -54,31 +54,6 @@ func raised(_ body: () -> Void) {
     body()
     cg.endTransparencyLayer()
     cg.restoreGState()
-}
-
-/// The family mark: a wavy cream ribbon hanging from a gold bow, like a kite's tail.
-func kiteTail() {
-    let knot = CGPoint(x: 796, y: 246)
-    let ribbon = CGMutablePath()
-    let steps = 40
-    for i in 0...steps {
-        let t = CGFloat(i) / CGFloat(steps)
-        let point = CGPoint(x: knot.x + sin(t * 2 * .pi) * (6 + 10 * t), y: knot.y - 96 * t)
-        if i == 0 { ribbon.move(to: point) } else { ribbon.addLine(to: point) }
-    }
-    cg.addPath(ribbon)
-    cg.setStrokeColor(cream); cg.setLineWidth(15); cg.setLineCap(.round); cg.setLineJoin(.round)
-    cg.strokePath()
-    let s: CGFloat = 21
-    let bow = CGMutablePath()
-    for side: CGFloat in [-1, 1] {
-        bow.move(to: knot)
-        bow.addLine(to: CGPoint(x: knot.x + side * s, y: knot.y + s * 0.7))
-        bow.addLine(to: CGPoint(x: knot.x + side * s, y: knot.y - s * 0.7))
-        bow.closeSubpath()
-    }
-    cg.addPath(bow); cg.setFillColor(gold); cg.fillPath()
-    cg.addEllipse(in: CGRect(x: knot.x - 6, y: knot.y - 6, width: 12, height: 12)); cg.fillPath()
 }
 
 // MARK: Symbol
@@ -124,7 +99,6 @@ raised {
         x += barWidth + gap
     }
 }
-kiteTail()
 
 NSGraphicsContext.current = nil
 guard let png = rep.representation(using: .png, properties: [:]) else { fatalError("no png") }
