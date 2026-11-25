@@ -119,11 +119,22 @@ asks on the second launch whether to check automatically, and sends nothing befo
 feed from the site; the request names the app and its version, and system profiling stays off, so nothing about
 the Mac is sent (the server sees the IP address, as with any web request).
 
-To release: bump `VERSION`, commit, then run `python3 release.py recast --notes "…"` in the site repository.
-`sh scripts/test-update.sh recast` there tests a real update end to end with a throwaway key, including refusing an
-update signed with another key. Sparkle's XPC services are left out of the app because Recast isn't sandboxed.
+To release: bump `VERSION` and push it, then push an annotated tag whose message is the release notes, one note per
+line:
 
-Before the first public release, LAME has to become a separate dynamic library (see Known limits).
+```sh
+git tag -a v1.2.3 -m "First note" -m "Second note" && git push origin v1.2.3
+```
+
+The Release workflow (`.github/workflows/release.yml`) runs `scripts/release-ci.sh` on a GitHub Mac: it builds with
+the update feed, runs the tests and the self-test, signs and notarizes the app when the Apple secrets are set, signs
+the update when `SPARKLE_PRIVATE_KEY` is set, and publishes a GitHub release with the zip and `update.json` (a
+pre-release until it's notarized). kitedrake.com then lists it for download and, once it's signed and notarized, in
+the update feed. A push to `main` that changes the workflow or the script does a dry run without publishing.
+`scripts/release-ci.sh` is the same file in every Kitedrake app repository: change all copies together. `sh
+scripts/test-update.sh recast` in the site repository tests a real update end to end with a throwaway key, including
+refusing an update signed with another key. Sparkle's XPC services are left out of the app because Recast isn't
+sandboxed.
 
 ## Tests
 

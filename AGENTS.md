@@ -108,6 +108,7 @@ These rules apply when working in a Git repository, including non-software work.
   user's own files in place.
 - In-app updates use Sparkle, pinned in `Package.swift`. Only release builds (`UPDATE_FEED_URL` and
   `UPDATE_PUBLIC_KEY` set) contain an updater; keep plain and omso Builder builds without one. `CFBundleVersion`
-  is `VERSION`, which Sparkle compares, so bump `VERSION` for every release. Releases go through `release.py` in
-  the `software-site` repository; after changing Sparkle or `build.sh`, run `sh scripts/test-update.sh recast`
+  is `VERSION`, which Sparkle compares, so bump `VERSION` for every release. Releases are annotated `v<version>` tags (push one only when the owner asks); the Release workflow builds and publishes them, and `release.py` in the `software-site` repository is the local fallback; after changing Sparkle or `build.sh`, run `sh scripts/test-update.sh recast`
   there. Never commit signing keys.
+- `scripts/release-ci.sh` is identical in every Kitedrake app repository; change all copies together. Release secrets
+  (Apple certificate, notary key, Sparkle key, site token) live only in GitHub secrets, never in files.
