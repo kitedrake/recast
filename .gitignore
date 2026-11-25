@@ -3,3 +3,10 @@ build/
 .swiftpm/
 .DS_Store
 out/
+
+# Agent instructions stay on this Mac: the repository is public.
+AGENTS.md
+CLAUDE.md
+PROJECT_RULES.md
+agent-config.json
+.agent-config/
