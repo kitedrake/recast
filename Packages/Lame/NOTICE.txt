@@ -8,5 +8,5 @@ You may replace that library with your own build of LAME 3.100's interface. Beca
 it afterwards, for example: codesign --force --deep --sign - Recast.app
 
 Source: the exact LAME source Recast uses, with its build settings, is in Recast's source repository under
-Packages/Lame (https://github.com/omsomso/recast). It is the official lame-3.100.tar.gz release
+Packages/Lame (https://github.com/kitedrake/recast). It is the official lame-3.100.tar.gz release
 (SHA-256 ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e), unmodified.
