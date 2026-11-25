@@ -3,7 +3,8 @@
   "profiles": [
     "general",
     "git",
-    "software"
+    "software",
+    "kitedrake"
   ],
   "skills": [],
   "rules": [
@@ -18,6 +19,10 @@
     {
       "name": "software",
       "content": "# Software project agreements\n\n- Treat released identifiers, data formats, and public interfaces as compatibility\n  contracts. Provide migration when changing released state or storage schemas.\n- Add meaningful behavioral tests for behavior changes and run affected checks.\n  Build relevant targets where necessary. Do not equate a successful build with\n  real application, device, platform, or user acceptance testing.\n- Keep interfaces accessible and usable at their supported sizes.\n- Pin dependencies where the project supports it. Do not edit third-party code\n  simply to conceal a build failure.\n- Document changes to behavior, setup, and release procedures. Do not publish\n  public releases, create release tags, or change licences without user instruction.\n"
+    },
+    {
+      "name": "kitedrake",
+      "content": "# kitedrake projects\n\nThese rules apply to the kitedrake apps and website, whose repositories live in the\n`kitedrake` GitHub organisation.\n\n- These checkouts push with a fine-grained token for the kitedrake organisation,\n  saved in the macOS Keychain as the `github.com` internet password. Each one's\n  `.git/config` uses git's `osxkeychain` helper instead of the `gh` login, which\n  can't see kitedrake repositories.\n- For GitHub CLI work on `kitedrake/*` (Actions runs, releases, pull requests,\n  API calls), run `~/.config/agent-guard/gh-kitedrake` with the usual gh\n  arguments, for example\n  `~/.config/agent-guard/gh-kitedrake run list -R kitedrake/kitedrake-site`.\n  It hands the Keychain token to gh for that one command without showing it,\n  refuses `gh auth`, aliases and extensions, and agent-guard checks it like gh.\n  Plain `gh` stays the tool for every other organisation.\n- Never read, print or copy the token. When it expires, the owner makes a new one\n  and enters it at the next git push. The helper's source is AgentConfig's\n  `hooks/gh_kitedrake.py`.\n"
     }
   ]
 }

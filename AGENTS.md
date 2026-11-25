@@ -3,8 +3,8 @@
 # Project instructions
 
 Shared source: AgentConfig (`agent-config.json` records its local path).
-Profiles: general, git, software.
-Shared rules SHA-256: `a3786c1204dd52c1070a5246ce52456ec30b4711523308cdc080a64eef68db5c`.
+Profiles: general, git, software, kitedrake.
+Shared rules SHA-256: `2afe0f2d9ba841d57160b5f1b991cdc0eccbafc7e1c0b9f974a3632afb7bc5ec`.
 
 These instructions include a portable snapshot of the shared rules.
 Project-specific additions below refine shared defaults within their scope.
@@ -82,6 +82,26 @@ These rules apply when working in a Git repository, including non-software work.
   simply to conceal a build failure.
 - Document changes to behavior, setup, and release procedures. Do not publish
   public releases, create release tags, or change licences without user instruction.
+
+# kitedrake projects
+
+These rules apply to the kitedrake apps and website, whose repositories live in the
+`kitedrake` GitHub organisation.
+
+- These checkouts push with a fine-grained token for the kitedrake organisation,
+  saved in the macOS Keychain as the `github.com` internet password. Each one's
+  `.git/config` uses git's `osxkeychain` helper instead of the `gh` login, which
+  can't see kitedrake repositories.
+- For GitHub CLI work on `kitedrake/*` (Actions runs, releases, pull requests,
+  API calls), run `~/.config/agent-guard/gh-kitedrake` with the usual gh
+  arguments, for example
+  `~/.config/agent-guard/gh-kitedrake run list -R kitedrake/kitedrake-site`.
+  It hands the Keychain token to gh for that one command without showing it,
+  refuses `gh auth`, aliases and extensions, and agent-guard checks it like gh.
+  Plain `gh` stays the tool for every other organisation.
+- Never read, print or copy the token. When it expires, the owner makes a new one
+  and enters it at the next git push. The helper's source is AgentConfig's
+  `hooks/gh_kitedrake.py`.
 
 ---
 
