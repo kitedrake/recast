@@ -1,4 +1,4 @@
-// Draws the Recast app icon (1024×1024 PNG): two arrows turning around three level bars, on an ochre tile.
+// Draws the Recast app icon (1024×1024 PNG): two arrows turning around three level bars, on a tangerine tile.
 // Run by icon/make-icns.sh.
 import AppKit
 
@@ -29,7 +29,7 @@ func shade(_ hex: UInt32, _ amount: CGFloat) -> CGColor {
 }
 let cream = rgb(0xf6f0e4)
 let gold = rgb(0xe2b552)
-let tile: UInt32 = 0xb8862a  // ochre
+let tile: UInt32 = 0xe8782a  // tangerine
 
 // The tile, on the macOS icon grid: inset from the canvas, with rounded corners and a drop shadow.
 let inset: CGFloat = 100
