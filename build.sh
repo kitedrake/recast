@@ -20,8 +20,10 @@ if { [ -n "$feed" ] && [ -z "$key" ]; } || { [ -z "$feed" ] && [ -n "$key" ]; };
   echo "Set both UPDATE_FEED_URL and UPDATE_PUBLIC_KEY, or neither." >&2
   exit 1
 fi
-xcrun swift build -c release --product Recast
-bindir="$(xcrun swift build -c release --show-bin-path)"
+# The packages are public: --disable-keychain stops SwiftPM looking for github.com passwords in the Keychain when it
+# downloads Sparkle's framework, which makes macOS ask to use whatever GitHub credentials are saved there.
+xcrun swift build --disable-keychain -c release --product Recast
+bindir="$(xcrun swift build --disable-keychain -c release --show-bin-path)"
 app="build/Recast.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
