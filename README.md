@@ -26,8 +26,7 @@ A macOS app (SwiftUI, Liquid Glass) for converting audio files. Drop files or wh
   <img src="docs/screenshots/converted-dark.png" alt="Five files converted to MP3" width="72%">
 </picture>
 
-*Screenshots made with Recast's snapshot mode and generated test tones (see Tests); GitHub shows the light or dark
-set to match your theme.*
+*Screenshots show generated test tones; GitHub shows the light or dark set to match your theme.*
 
 Recast's own code is open source under the GNU General Public License, version 3 or later (`LICENSE`).
 Copyright (C) 2026 omso. The bundled encoders keep their own licences: LAME 3.100 is under the GNU LGPL
@@ -147,11 +146,6 @@ them) and check: bit-exact lossless round trips in every lossless format, dither
 against the source (correlation and alignment), resampling, channel mixing, loudness measurement against the
 BS.1770 reference tone and normalization, clipping reports, tags and cover art through every format, M4A chunk
 offsets when large cover art moves the audio, very short files, file naming and collisions, and settings storage.
-
-Screens can be captured without clicking: `RECAST_SNAPSHOT=/tmp/shots RECAST_FILES=a.wav:b.flac` launches the
-app, saves PNGs of the main states (light, dark, minimum size), converts copies into `/tmp/shots/converted` and
-quits. Launch it from a terminal that has Screen Recording permission; the window may look inactive in the
-captures because the app starts in the background.
 
 ## Known limits
 
