@@ -75,7 +75,7 @@ enum Snapshot {
             model.settings.loudnessTarget = -16
             model.settings.limiter = true
             // Taller, so the Volume section with the limiter fits under Processing.
-            resize(1180, 920)
+            resize(1180, 1060)
             await settle(300, for: "12-processing", "12-processing-dark")
             NotificationCenter.default.post(name: SettingsInspector.scrollRequest, object: "processing")
             await settle(800, for: "12-processing", "12-processing-dark")
@@ -84,6 +84,36 @@ enum Snapshot {
             await settle(600, for: "12-processing-dark")
             capture(folder, "12-processing-dark")
             NSApp.appearance = NSAppearance(named: .aqua)
+
+            // Audio Units: three of Apple's effects, the reverb switched off, scrolled to their section.
+            let installed = PluginHost.installedEffects()
+            model.settings.plugins = ["aufx nbeq appl", "aufx dcmp appl", "aufx rvb2 appl"].compactMap { codes in
+                installed.first { $0.codes == codes }
+            }
+            if model.settings.plugins.count == 3 { model.settings.plugins[2].bypassed = true }
+            model.settings.keepPluginTails = true
+            model.loadInstalledEffects()
+            await settle(300, for: "13-plugins", "13-plugins-dark")
+            NotificationCenter.default.post(name: SettingsInspector.scrollRequest, object: "plugins")
+            await settle(800, for: "13-plugins", "13-plugins-dark")
+            capture(folder, "13-plugins")
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            await settle(600, for: "13-plugins-dark")
+            capture(folder, "13-plugins-dark")
+            NSApp.appearance = NSAppearance(named: .aqua)
+            // The first plugin's own window, opened as Edit… does.
+            if let first = model.settings.plugins.first, wanted("14-plugin-window") {
+                model.editPlugin(first)
+                for _ in 0..<100 where PluginEditors.shared.window(for: first.id) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                try? await Task.sleep(for: .milliseconds(1000))
+                if let window = PluginEditors.shared.window(for: first.id) {
+                    capture(folder, "14-plugin-window", window: window)
+                    PluginEditors.shared.close(first.id)
+                } else {
+                    FileHandle.standardError.write(Data("The plugin window didn't open.\n".utf8))
+                }
+            }
+            model.settings.plugins = []
             NotificationCenter.default.post(name: SettingsInspector.scrollRequest, object: "top")
             resize(1180, 760)
 
@@ -140,10 +170,10 @@ enum Snapshot {
 
     static func wanted(_ name: String) -> Bool { only?.contains(name) ?? true }
 
-    @MainActor static func capture(_ folder: URL, _ name: String) {
+    @MainActor static func capture(_ folder: URL, _ name: String, window chosen: NSWindow? = nil) {
         guard wanted(name) else { return }
         let url = folder.appendingPathComponent(name + ".png")
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) else { return }
+        guard let window = chosen ?? NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) else { return }
         // The real on-screen pixels. AppKit's own rendering can't draw Liquid Glass or the list, so there is no
         // fallback: launch from a terminal that has Screen Recording permission.
         let process = Process()

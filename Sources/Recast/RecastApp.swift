@@ -6,7 +6,7 @@ import SwiftUI
 enum Main {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if ["--convert", "--info", "--self-test", "--help"].contains(arguments.first ?? "") {
+        if ["--convert", "--info", "--list-au", "--self-test", "--help"].contains(arguments.first ?? "") {
             exit(CommandLineTool.run(arguments))
         }
         PreferencesMigration.carryOver()   // settings saved under the earlier bundle ID

@@ -117,6 +117,8 @@ extension ConversionSettings {
         }
         if limiter { parts.append("Limiter") }
         if trim != .off { parts.append("Trim") }
+        let plugins = plugins.filter { !$0.bypassed }
+        if plugins.count == 1 { parts.append(plugins[0].name) } else if plugins.count > 1 { parts.append("\(plugins.count) Audio Units") }
         if highPass { parts.append("High-pass \(Processing.frequencyText(highPassFrequency))") }
         if lowPass { parts.append("Low-pass \(Processing.frequencyText(lowPassFrequency))") }
         if removeDC { parts.append("DC removed") }
@@ -130,7 +132,7 @@ extension ConversionSettings {
     /// Whether anything is set that processes the sound beyond format, rate, channels and level.
     public var hasEffects: Bool {
         limiter || trim != .off || highPass || lowPass || removeDC || fadeInMS > 0 || fadeOutMS > 0 || padStartMS > 0
-            || padEndMS > 0 || swapChannels || invertPolarity
+            || padEndMS > 0 || swapChannels || invertPolarity || plugins.contains { !$0.bypassed }
     }
 
     /// Apple's 0–127 VBR quality in words.

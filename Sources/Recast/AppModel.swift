@@ -44,6 +44,9 @@ final class AppModel {
     var showInspector: Bool { didSet { UserDefaults.standard.set(showInspector, forKey: "showInspector") } }
     var summary: Summary?
     var namingPreset = false
+    /// Audio Unit effects installed on this Mac, read once when first needed.
+    var installedEffects: [PluginEffect] = []
+    private var lookedForEffects = false
 
     private var cancellation = Cancellation()
     private let queue: OperationQueue = {
@@ -159,11 +162,48 @@ final class AppModel {
         return FileManager.default.displayName(atPath: path)
     }
 
+    // MARK: Audio Units
+
+    func loadInstalledEffects() {
+        guard !lookedForEffects else { return }
+        lookedForEffects = true
+        Task.detached(priority: .userInitiated) {
+            let effects = PluginHost.installedEffects()
+            await MainActor.run { self.installedEffects = effects }
+        }
+    }
+
+    func addPlugin(_ effect: PluginEffect) {
+        var added = effect
+        added.id = UUID()
+        added.state = nil
+        settings.plugins.append(added)
+    }
+
+    func editPlugin(_ effect: PluginEffect) { PluginEditors.shared.edit(effect) }
+
+    func removePlugin(_ id: UUID) {
+        PluginEditors.shared.close(id)
+        settings.plugins.removeAll { $0.id == id }
+    }
+
+    func movePlugin(_ id: UUID, by offset: Int) {
+        guard let index = settings.plugins.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard settings.plugins.indices.contains(target) else { return }
+        settings.plugins.swapAt(index, target)
+    }
+
     // MARK: Presets
 
-    func apply(_ preset: Preset) { settings = settings.applying(preset: preset.settings) }
+    func apply(_ preset: Preset) {
+        // Open plugin windows belong to the plugins being replaced.
+        for plugin in settings.plugins { PluginEditors.shared.close(plugin.id) }
+        settings = settings.applying(preset: preset.settings)
+    }
 
     func savePreset(named name: String) {
+        PluginEditors.shared.saveAll()
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         userPresets.removeAll { $0.name == trimmed }
@@ -178,6 +218,7 @@ final class AppModel {
 
     func convert() {
         guard !isConverting else { return }
+        PluginEditors.shared.saveAll()
         let settings = self.settings
         if settings.destination == .folder, settings.folderPath == nil {
             chooseFolder()

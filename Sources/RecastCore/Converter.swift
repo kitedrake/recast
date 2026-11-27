@@ -85,22 +85,54 @@ public enum Converter {
 
         let rateChanged = plan.sampleRate != info.sampleRate
         let mixer = ChannelMixer.make(from: info.channels, to: plan.channels)
-        let decodedFrames = Int64((Double(info.frames) * plan.sampleRate / info.sampleRate).rounded(.up))
+        var decodedFrames = Int64((Double(info.frames) * plan.sampleRate / info.sampleRate).rounded(.up))
         var processing = Processing(settings: settings, sampleRate: plan.sampleRate, channels: plan.channels)
         notes += processing.notes
         let analysing = settings.volume == .loudness || settings.volume == .peak
         let mayCorrect = settings.limiter && settings.volume == .loudness
 
         // Each pass reads the whole file; progress is shared out equally.
-        let passes = Double((processing.needsScan ? 1 : 0) + (analysing ? 1 : 0) + (mayCorrect ? 1 : 0) + 1)
+        let passCount: Int = [!processing.plugins.isEmpty, processing.needsScan, analysing, mayCorrect].filter { $0 }.count + 1
+        let passes = Double(passCount)
         var pass = 0.0
+        // What the passes read: the input, or after the plugin pass the file it rendered.
+        var source = input, sourceChannels = info.channels, sourceMixer = mixer
         func read(_ effects: [AudioEffect], _ body: (AVAudioPCMBuffer) throws -> Void) throws {
             let base = pass
             pass += 1
-            try decode(input: input, plan: plan, mixer: mixer, sourceChannels: info.channels, effects: effects, onBlock: { done in
+            try decode(input: source, plan: plan, mixer: sourceMixer, sourceChannels: sourceChannels, effects: effects, onBlock: { done in
                 if isCancelled() { throw ConversionError.cancelled }
                 progress((base + min(1, Double(done) / Double(max(1, decodedFrames)))) / passes)
             }, body)
+        }
+
+        // Plugins run once, into a temporary float file that every later pass reads: they are often slow, and some
+        // never sound the same twice (random modulation), which would make the measurements miss the output.
+        var cleanUpDC: DCBlocker?
+        let rendered = FileManager.default.temporaryDirectory.appendingPathComponent("Recast plugins \(UUID().uuidString).caf")
+        defer { try? FileManager.default.removeItem(at: rendered) }
+        if !processing.plugins.isEmpty {
+            let chain = try PluginChain(effects: processing.plugins, sampleRate: plan.sampleRate, channels: plan.channels,
+                                        keepTails: settings.keepPluginTails)
+            let (cleanUp, dc) = processing.cleanUpEffects()
+            cleanUpDC = dc
+            let writer = try FloatFileWriter(url: rendered, sampleRate: plan.sampleRate, channels: plan.channels)
+            try read(cleanUp) { buffer in
+                let count = Int(buffer.frameLength)
+                let block = (0..<plan.channels).map { Array(UnsafeBufferPointer(start: buffer.floatChannelData![$0], count: count)) }
+                try writer.write(chain.process(block))
+            }
+            try writer.write(chain.finish())
+            writer.close()
+            let tail = writer.frames - decodedFrames
+            if settings.keepPluginTails, tail > 0 {
+                notes.append(String(format: "Kept %.1f s of effect tails.", Double(tail) / plan.sampleRate))
+            }
+            source = rendered
+            sourceChannels = plan.channels
+            sourceMixer = nil
+            decodedFrames = writer.frames
+            processing.cleanedUp = true
         }
 
         if processing.needsScan {
@@ -152,7 +184,8 @@ public enum Converter {
             }
         }
 
-        let (effects, dcBlocker) = processing.effects()
+        let (effects, encodeDC) = processing.effects()
+        let dcBlocker = encodeDC ?? cleanUpDC
         let limiter = settings.limiter ? processing.limiter(gain: gain) : nil
         // With the limiter, the gain is applied in front of it; otherwise when rounding, as before.
         let finalGain: Float = limiter == nil ? gain : 1
@@ -276,6 +309,46 @@ public enum Converter {
             var block = Array(repeating: [Float](), count: plan.channels)
             for effect in effects { effect.finish(&block) }
             try emit(block)
+        }
+    }
+
+    /// Writes blocks of float samples into a 32-bit float CAF.
+    private final class FloatFileWriter {
+        private var file: AVAudioFile?
+        private let buffer: AVAudioPCMBuffer
+        private(set) var frames: Int64 = 0
+
+        init(url: URL, sampleRate: Double, channels: Int) throws {
+            let format = floatFormat(rate: sampleRate, channels: channels)
+            var settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: channels,
+                                           AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsBigEndianKey: false,
+                                           AVLinearPCMIsNonInterleaved: false]
+            if let layout = format.channelLayout, channels > 2 {
+                settings[AVChannelLayoutKey] = Data(bytes: layout.layout, count: MemoryLayout<AudioChannelLayout>.size)
+            }
+            file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+            buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Converter.blockFrames)!
+        }
+
+        func write(_ block: [[Float]]) throws {
+            guard let file else { return }
+            let total = block.first?.count ?? 0
+            var start = 0
+            while start < total {
+                let count = min(Int(Converter.blockFrames), total - start)
+                buffer.frameLength = AVAudioFrameCount(count)
+                for channel in block.indices {
+                    block[channel].withUnsafeBufferPointer { buffer.floatChannelData![channel].update(from: $0.baseAddress! + start, count: count) }
+                }
+                try file.write(from: buffer)
+                start += count
+                frames += Int64(count)
+            }
+        }
+
+        func close() {
+            file?.close()
+            file = nil
         }
     }
 

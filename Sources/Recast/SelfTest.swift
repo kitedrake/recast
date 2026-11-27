@@ -89,6 +89,30 @@ enum SelfTest {
             expect(processedLevel.truePeak < -0.9, String(format: "processing: true peak %.2f dBTP over the -1 dBTP limit", processedLevel.truePeak))
             expect(processed.notes.contains { $0.hasPrefix("The limiter held peaks") }, "processing: the limiter didn't work (\(processed.notes))")
             print(String(format: "ok processing: %.3f s, %.2f LUFS, true peak %.2f dBTP", processedInfo.duration, processedLevel.loudness, processedLevel.truePeak))
+
+            // Audio Units: Apple's sample delay set to 100 samples, then Apple's peak limiter, whose 2 ms look-ahead
+            // must be taken out again. Far below the limiter's threshold, the result is the source 100 samples later.
+            let installed = PluginHost.installedEffects()
+            if var delay = installed.first(where: { $0.codes == "aufx sdly appl" }), let limiter = installed.first(where: { $0.codes == "aufx lmtr appl" }) {
+                let unit = try PluginHost.load(delay)
+                unit.parameterTree?.parameter(withAddress: 0)?.value = 100
+                delay.state = PluginHost.state(of: unit)
+                var plugins = ConversionSettings()
+                plugins.format = .wav
+                plugins.pcmDepth = .float32
+                plugins.plugins = [delay, limiter]
+                let quiet = samples.map { $0.map { $0 * 0.2 } }
+                let quietURL = folder.appendingPathComponent("Self Test quiet.wav")
+                try writeWAV(quiet, rate: rate, to: quietURL)
+                let pluginOutcome = try Converter.convert(input: quietURL, to: folder.appendingPathComponent("Self Test plugins.wav"), settings: plugins)
+                let result = try decode(pluginOutcome.output)
+                expect(result[0].count == frames, "Audio Units: \(result[0].count) samples instead of \(frames)")
+                let error = zip(result[0].dropFirst(100), quiet[0].dropLast(100)).map { abs($0 - $1) }.max() ?? 1
+                expect(error < 0.001, "Audio Units: the result is \(error) away from the delayed source")
+                print(String(format: "ok Audio Units: sample delay and peak limiter, largest difference %.6f", error))
+            } else {
+                failures.append("Audio Units: Apple's AUSampleDelay or AUPeakLimiter isn't installed")
+            }
         } catch {
             failures.append(error.localizedDescription)
         }

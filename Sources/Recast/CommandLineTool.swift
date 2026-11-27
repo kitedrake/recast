@@ -8,6 +8,7 @@ enum CommandLineTool {
 
       Recast --convert FILE|FOLDER… --format FORMAT [options]
       Recast --info FILE…
+      Recast --list-au
       Recast --self-test FOLDER
 
     Formats: wav aiff flac alac caf mp3 aac vorbis opus, or same (each file keeps its format)
@@ -37,6 +38,9 @@ enum CommandLineTool {
       --trim-start DB | --trim-end DB    at one end only
       --fade-in MS | --fade-out MS
       --pad-start MS | --pad-end MS      add silence
+      --au NAME               an Audio Unit effect (see --list-au), after the filters; repeat for more
+      --au-preset FILE        settings for the last --au, from an .aupreset file
+      --keep-tails            let effects ring out after the end
     """
 
     static func run(_ arguments: [String]) -> Int32 {
@@ -45,6 +49,9 @@ enum CommandLineTool {
         switch command {
         case "--convert": return convert(rest)
         case "--info": return info(rest)
+        case "--list-au":
+            for effect in PluginHost.installedEffects() { print("\(effect.manufacturer): \(effect.name)  (\(effect.codes))") }
+            return 0
         case "--self-test": return SelfTest.run(folder: rest.first.map { URL(fileURLWithPath: $0, isDirectory: true) })
         default: print(usage); return command == "--help" ? 0 : 1
         }
@@ -68,6 +75,22 @@ enum CommandLineTool {
             }
         }
         return status
+    }
+
+    struct Message: Error { let text: String }
+
+    /// An installed effect by name: "AUDelay", "Apple: AUDelay", or a unique part of a name.
+    private static func findEffect(_ query: String) -> Result<PluginEffect, Message> {
+        let effects = PluginHost.installedEffects()
+        let wanted = query.lowercased()
+        let exact = effects.filter { $0.name.lowercased() == wanted || "\($0.manufacturer): \($0.name)".lowercased() == wanted }
+        let matches = exact.isEmpty ? effects.filter { "\($0.manufacturer): \($0.name)".lowercased().contains(wanted) } : exact
+        switch matches.count {
+        case 1: return .success(matches[0])
+        case 0: return .failure(Message(text: "No Audio Unit called “\(query)”. Recast --list-au shows them."))
+        default:
+            return .failure(Message(text: "“\(query)” could be:\n" + matches.map { "  \($0.manufacturer): \($0.name)" }.joined(separator: "\n")))
+        }
     }
 
     private static func convert(_ arguments: [String]) -> Int32 {
@@ -134,6 +157,21 @@ enum CommandLineTool {
                 guard let level = next().flatMap(Double.init) else { print("\(argument) takes a level in dB, e.g. -60."); return 1 }
                 settings.trim = argument == "--trim" ? .both : argument == "--trim-start" ? .start : .end
                 settings.trimThreshold = level
+            case "--au":
+                guard let name = next() else { print("--au takes the name of an Audio Unit (see --list-au)."); return 1 }
+                switch findEffect(name) {
+                case .success(let effect): settings.plugins.append(effect)
+                case .failure(let message): print(message.text); return 1
+                }
+            case "--au-preset":
+                guard let path = next(), !settings.plugins.isEmpty else { print("--au-preset FILE follows an --au."); return 1 }
+                do {
+                    settings.plugins[settings.plugins.count - 1].state = try PluginHost.state(fromPresetFile: URL(fileURLWithPath: path))
+                } catch {
+                    print(error.localizedDescription)
+                    return 1
+                }
+            case "--keep-tails": settings.keepPluginTails = true
             case "--fade-in", "--fade-out", "--pad-start", "--pad-end":
                 guard let milliseconds = next().flatMap(Double.init), milliseconds >= 0 else { print("\(argument) takes milliseconds."); return 1 }
                 switch argument {

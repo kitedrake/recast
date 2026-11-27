@@ -288,6 +288,10 @@ public struct ConversionSettings: Codable, Equatable, Sendable {
     public var fadeOutMS = 0.0
     public var padStartMS = 0.0
     public var padEndMS = 0.0
+    /// Audio Unit effects, run after the filters and before trimming.
+    public var plugins: [PluginEffect] = []
+    /// Let plugins play out their tails (reverb, echoes) at the end instead of stopping at the file's length.
+    public var keepPluginTails = false
 
     // Metadata
     public var copyTags = true

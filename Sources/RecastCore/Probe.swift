@@ -165,12 +165,13 @@ func fourCharText(_ status: OSStatus) -> String {
 public enum ConversionError: LocalizedError, Equatable {
     case unreadable(String)
     case encoder(String)
+    case plugin(String)
     case cancelled
     case wouldReplaceOriginal
 
     public var errorDescription: String? {
         switch self {
-        case .unreadable(let message), .encoder(let message): return message
+        case .unreadable(let message), .encoder(let message), .plugin(let message): return message
         case .cancelled: return "Stopped."
         case .wouldReplaceOriginal: return "The converted file would replace the original."
         }

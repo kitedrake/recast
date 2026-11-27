@@ -29,6 +29,8 @@ struct SettingsInspector: View {
             audioSection(settings)
             processingSection(settings)
                 .id("processing")
+            pluginsSection(settings)
+                .id("plugins")
             volumeSection(settings)
             Section("Tags") {
                 Toggle("Copy tags", isOn: settings.copyTags)
@@ -225,8 +227,84 @@ struct SettingsInspector: View {
         } header: {
             Text("Processing")
         } footer: {
-            Text("In this order: swap and invert, DC offset, filters, trim, fades, added silence; then the volume. Trimming cuts everything before the first and after the last sample above the level. Fades use a smooth curve that starts and ends silent.")
+            Text("In this order: swap and invert, DC offset, filters, Audio Units, trim, fades, added silence; then the volume. Trimming cuts everything before the first and after the last sample above the level. Fades use a smooth curve that starts and ends silent.")
         }
+    }
+
+    // MARK: Audio Units
+
+    @ViewBuilder
+    private func pluginsSection(_ settings: Binding<ConversionSettings>) -> some View {
+        let value = settings.wrappedValue
+        Section {
+            ForEach(Array(value.plugins.enumerated()), id: \.element.id) { index, plugin in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(plugin.name)
+                            .lineLimit(1)
+                        Text(plugin.manufacturer)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Button("Edit…") { model.editPlugin(plugin) }
+                        .disabled(plugin.bypassed)
+                        .help("Open the plugin's own controls")
+                    Toggle("On", isOn: Binding(get: { !plugin.bypassed }, set: { on in
+                        if let position = settings.wrappedValue.plugins.firstIndex(where: { $0.id == plugin.id }) {
+                            settings.wrappedValue.plugins[position].bypassed = !on
+                        }
+                    }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help("Turn the plugin off without removing it")
+                    Menu {
+                        Button("Move Up") { model.movePlugin(plugin.id, by: -1) }
+                            .disabled(index == 0)
+                        Button("Move Down") { model.movePlugin(plugin.id, by: 1) }
+                            .disabled(index == value.plugins.count - 1)
+                        Divider()
+                        Button("Remove", role: .destructive) { model.removePlugin(plugin.id) }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("More for \(plugin.name)")
+                }
+            }
+            LabeledContent("Add") {
+                Menu("Audio Unit") {
+                    if model.installedEffects.isEmpty {
+                        Text("Looking for Audio Units…")
+                    }
+                    ForEach(manufacturers, id: \.self) { manufacturer in
+                        Menu(manufacturer) {
+                            ForEach(model.installedEffects.filter { $0.manufacturer == manufacturer }) { effect in
+                                Button(effect.name) { model.addPlugin(effect) }
+                            }
+                        }
+                    }
+                }
+                .fixedSize()
+            }
+            if !value.plugins.isEmpty {
+                Toggle("Keep effect tails", isOn: settings.keepPluginTails)
+                    .help("Let reverbs and echoes ring out after the end instead of stopping at the file's length")
+            }
+        } header: {
+            Text("Audio Units")
+        } footer: {
+            Text("Effects installed on this Mac, after the filters and before trimming, top to bottom. Each runs in a process of its own, so a plugin that crashes stops only that file. Their settings are saved with presets.")
+        }
+        .onAppear { model.loadInstalledEffects() }
+    }
+
+    private var manufacturers: [String] {
+        var seen = Set<String>()
+        return model.installedEffects.map(\.manufacturer).filter { seen.insert($0).inserted }
     }
 
     // MARK: Volume

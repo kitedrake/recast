@@ -392,6 +392,8 @@ struct Processing {
     private let lowPass: Double?
     /// From the scan: the frames kept by trimming and how many there are.
     private var kept: (start: Int64, end: Int64)?
+    /// Set once the plugin pass has applied the clean-up effects (and the plugins) into a file the later passes read.
+    var cleanedUp = false
 
     init(settings: ConversionSettings, sampleRate: Double, channels: Int) {
         self.settings = settings
@@ -413,6 +415,7 @@ struct Processing {
     }
 
     var hasFlip: Bool { settings.invertPolarity || (settings.swapChannels && channels == 2) }
+    var plugins: [PluginEffect] { settings.plugins.filter { !$0.bypassed } }
     var fadeInFrames: Int64 { frames(settings.fadeInMS) }
     var fadeOutFrames: Int64 { frames(settings.fadeOutMS) }
     var padFrames: (start: Int, end: Int) { (Int(frames(settings.padStartMS)), Int(frames(settings.padEndMS))) }
@@ -420,21 +423,24 @@ struct Processing {
     /// Whether any effect before the level change is on.
     var isActive: Bool {
         hasFlip || settings.removeDC || highPass != nil || lowPass != nil || settings.trim != .off
-            || fadeInFrames > 0 || fadeOutFrames > 0 || padFrames.start > 0 || padFrames.end > 0
+            || fadeInFrames > 0 || fadeOutFrames > 0 || padFrames.start > 0 || padFrames.end > 0 || !plugins.isEmpty
     }
 
     /// Trimming and fading out need to know where the file ends, so they read it once first.
     var needsScan: Bool { settings.trim != .off || fadeOutFrames > 0 }
 
     /// Effects that change the level, so stored ReplayGain values no longer apply.
-    var changesLevel: Bool { settings.removeDC || highPass != nil || lowPass != nil || fadeInFrames > 0 || fadeOutFrames > 0 }
+    var changesLevel: Bool {
+        settings.removeDC || highPass != nil || lowPass != nil || fadeInFrames > 0 || fadeOutFrames > 0 || !plugins.isEmpty
+    }
 
     private func frames(_ milliseconds: Double) -> Int64 {
         milliseconds > 0 ? Int64((milliseconds / 1000 * sampleRate).rounded()) : 0
     }
 
-    /// The effects up to the trim: what the scan looks at.
+    /// The effects up to the trim: what the scan looks at (nothing once the plugin pass has applied them).
     func cleanUpEffects() -> (effects: [AudioEffect], dc: DCBlocker?) {
+        guard !cleanedUp else { return ([], nil) }
         var effects: [AudioEffect] = []
         if hasFlip { effects.append(ChannelFlip(swap: settings.swapChannels, invert: settings.invertPolarity)) }
         var dc: DCBlocker?

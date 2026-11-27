@@ -2,13 +2,14 @@
 
 A macOS app (SwiftUI, Liquid Glass) for converting and batch-processing audio files. Drop files or whole folders
 on the window (or the Dock icon), pick a format, press **Convert**. Everything else is optional: Recast can also
-trim, fade, filter, level and limit every file on the way, or keep each file's format and only process it.
+trim, fade, filter, level and limit every file on the way, run it through Audio Unit effects, or keep each file's
+format and only process it.
 
 - **Bottom bar**: the format (or **Same as Source**), a quality menu with the usual choices for that format, and where the files go
   (**Next to Originals** or a folder, with recent folders, "keep folder structure" and what to do when a file
   already exists). **Convert** converts every file in the list; **Stop** ends a batch (⌘.).
 - **Settings** (toolbar button or ⌥⌘I) holds the rest, grouped: format options, sample rate, channels,
-  dither, processing, volume and limiter, tags, output folder and file-name pattern. **Preset** at the top applies a built-in or saved
+  dither, processing, Audio Units, volume and limiter, tags, output folder and file-name pattern. **Preset** at the top applies a built-in or saved
   preset, or saves the current settings (format and sound only; where files go stays as it is).
 - Each row shows the file's format, bit depth, rate, channels and length. After converting it shows the new
   file and its size; an ⓘ lists anything worth knowing (resampled because the format required it, level
@@ -109,14 +110,35 @@ Optional steps between channel mixing and the volume change, always in this orde
    the start doesn't thump. The row says how large the offset was.
 3. **High-pass** and **low-pass**: fourth-order Butterworth (24 dB per octave, −3 dB at the set frequency). A
    frequency too high for the sample rate is skipped, with a note.
-4. **Trim silence** at the start, the end or both: everything before the first and after the last sample at or
+4. **Audio Units**: effects installed on the Mac, top to bottom (see below).
+5. **Trim silence** at the start, the end or both: everything before the first and after the last sample at or
    above the level (−60 dB unless set) goes. A file that's quiet throughout is left alone, with a note.
-5. **Fade in** and **fade out**: a raised-cosine curve, silent at the very first and last sample.
-6. **Add silence** before and after.
+6. **Fade in** and **fade out**: a raised-cosine curve, silent at the very first and last sample.
+7. **Add silence** before and after.
 
 Trimming and fading out read each file once before converting it to find where its sound ends, and matching
 loudness or peaks reads it once more, so these are slower than a plain conversion (about 2.5× for a 5-minute file
 with everything on).
+
+### Audio Units
+
+**Add › Audio Unit** in the Audio Units section lists every effect installed on the Mac (Audio Units of the effect
+and music-effect types), by manufacturer. Each one in the list has **Edit…**, which opens the plugin's own window
+(or plain controls built from its parameters when it has none), an on/off switch, and a menu to move or remove it.
+Its settings are saved with Recast's settings and presets, and taken from open plugin windows before converting.
+
+- Each plugin runs in a process of its own (macOS's Audio Unit hosting): one that crashes stops only that file,
+  Intel-only plugins work on Apple silicon, and the signed app needs no exception to load other developers' code.
+  A plugin that can't run that way is loaded into Recast itself; in the signed release that works only for Apple's
+  own effects.
+- Plugins run once per file, rendering offline into a temporary 32-bit float file that the later passes (trimming,
+  loudness) read, so slow plugins don't run twice and plugins with random modulation are measured as they sound.
+- Each plugin's reported delay is taken out, so the result lines up with the source. With **Keep effect tails**,
+  reverbs and echoes ring out after the end (as long as the plugin reports, at most 30 seconds); trim the end to
+  drop what's inaudible. Without it, files keep their length.
+- Plugins that follow the host's tempo get 120 BPM in 4/4, playing from the start of each file.
+- A file fails, with the reason in its row, when a plugin isn't installed (presets from another Mac) or can't
+  process the file's channels or sample rate; Recast doesn't quietly leave a plugin out.
 
 **Same as Source** keeps each file's format instead of converting: lossless files keep their bit depth, compressed
 files are encoded again at about their bit rate (and lose a little quality, as any re-encoding does; the row says
@@ -141,7 +163,8 @@ Requires macOS 26 (Liquid Glass) and Xcode 26 or newer; the script uses Xcode's 
 
 The repository describes its build in `omso-build.json`: `build.sh`, the engine tests (`test.sh`), then
 `Recast --self-test`, which converts a generated, tagged 24-bit file to every format and checks lengths, tags,
-cover art, bit-exact lossless audio, loudness matching and processing (trim, fades, filters, limiter). **Build & Install** copies `Recast.app` into
+cover art, bit-exact lossless audio, loudness matching, processing (trim, fades, filters, limiter) and Audio Units
+(Apple's sample delay and peak limiter in a chain). **Build & Install** copies `Recast.app` into
 `/Applications/omso`.
 
 Command line (same engine, no window):
@@ -150,6 +173,8 @@ Command line (same engine, no window):
 build/Recast.app/Contents/MacOS/Recast --convert FILE|FOLDER… --format mp3 [--out FOLDER] [--bitrate 320] …
 build/Recast.app/Contents/MacOS/Recast --convert ~/Music/Album --preset podcast --out ~/Desktop/Episodes
 build/Recast.app/Contents/MacOS/Recast --convert ~/Takes --format same --trim -55 --highpass 80 --loudness -16 --limit -1 --out ~/Desktop/Clean
+build/Recast.app/Contents/MacOS/Recast --list-au          # installed Audio Unit effects
+build/Recast.app/Contents/MacOS/Recast --convert ~/Stems --format wav --au "AUNBandEQ" --au-preset Tilt.aupreset --au "Apple: AUReverb2" --keep-tails
 build/Recast.app/Contents/MacOS/Recast --info FILE…        # format, loudness, true peak and tags
 build/Recast.app/Contents/MacOS/Recast --self-test FOLDER
 build/Recast.app/Contents/MacOS/Recast --help              # every option
@@ -206,7 +231,9 @@ offsets when large cover art moves the audio, very short files, file naming and 
 Processing tests check trimming to the exact sample, fade curves and added silence, filter response at and around
 the set frequency, DC offset removal, swapping and inverting, the limiter (true peak under the limit, no delay,
 untouched below the limit), loudness with the limiter reaching its target, processing in every format, Same as
-Source, and presets saved before processing existed.
+Source, and presets saved before processing existed. Audio Unit tests use Apple's own effects: settings reaching
+the plugin exactly (a 100-sample delay), plugin delay taken out, plugins running before trimming, tails cut or
+kept, bypassed plugins left out, a missing plugin stopping the file, and plugin settings surviving storage.
 
 ## Known limits
 
@@ -219,6 +246,9 @@ Source, and presets saved before processing existed.
 - CAF files get no cover art (Core Audio's info chunk has no field for it). WAV tags are skipped for RF64 files.
 - If `libmp3lame.dylib` is missing from the app, macOS won't start it (the library is linked, not loaded on
   demand).
+- Audio Units only: effects, not instruments or format converters (time stretch, pitch). VST3 plugins aren't
+  hosted. A plugin that misreports its delay or tail comes out shifted or cut; one that shows a licence or
+  activation window may refuse to process until it's set up in its own window.
 
 ## Layout
 
@@ -230,6 +260,7 @@ Sources/RecastCore/         engine, no UI
   DSP.swift                 channel mixing, dither and noise shaping
   Loudness.swift            BS.1770 loudness, sample and true peak
   Effects.swift             processing: swap/invert, DC, filters, trim, fades, silence, limiter
+  Plugins.swift             Audio Units: finding, loading out of process, offline rendering, saved settings
   SameFormat.swift          "Same as Source": each file's own format and about its bit rate
   Converter.swift           one file: plan, scan, analyse, process, encode, tag, move into place
   OutputPlanner.swift       output names and folders, collisions, folder scanning
@@ -238,6 +269,6 @@ Sources/RecastCore/         engine, no UI
 Packages/Lame/              LAME 3.100 encoder, vendored unmodified (see OMSO_PROVENANCE.md), built as
                             libmp3lame.dylib; NOTICE.txt goes into the app
 Sources/COggVorbis/         libogg + libvorbis 1.3.7 as bundled with JUCE (see OMSO_PROVENANCE.md)
-Sources/Recast/             SwiftUI app: list, bar, settings, command line, self-test, snapshots
+Sources/Recast/             SwiftUI app: list, bar, settings, plugin windows, command line, self-test, snapshots
 Tests/RecastCoreTests/      generated fixtures and engine tests
 ```
