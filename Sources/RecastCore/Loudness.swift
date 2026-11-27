@@ -30,9 +30,9 @@ final class LoudnessMeter {
     private var truePeakValue: Float = 0
     private var history: [[Float]]
     private var historyIndex = 0
-    private static let phases = 4
-    private static let taps = 12
-    private static let coefficients: [[Float]] = {
+    static let phases = 4
+    static let taps = 12
+    static let coefficients: [[Float]] = {
         // Windowed-sinc 4× interpolator, 48 taps (12 per phase), as in BS.1770-4 Annex 2.
         let length = phases * taps
         let center = Double(length - 1) / 2

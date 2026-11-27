@@ -1,17 +1,18 @@
 # Recast
 
-A macOS app (SwiftUI, Liquid Glass) for converting audio files. Drop files or whole folders on the window
-(or the Dock icon), pick a format, press **Convert**. Everything else is optional.
+A macOS app (SwiftUI, Liquid Glass) for converting and batch-processing audio files. Drop files or whole folders
+on the window (or the Dock icon), pick a format, press **Convert**. Everything else is optional: Recast can also
+trim, fade, filter, level and limit every file on the way, or keep each file's format and only process it.
 
-- **Bottom bar**: the format, a quality menu with the usual choices for that format, and where the files go
+- **Bottom bar**: the format (or **Same as Source**), a quality menu with the usual choices for that format, and where the files go
   (**Next to Originals** or a folder, with recent folders, "keep folder structure" and what to do when a file
   already exists). **Convert** converts every file in the list; **Stop** ends a batch (⌘.).
 - **Settings** (toolbar button or ⌥⌘I) holds the rest, grouped: format options, sample rate, channels,
-  dither, volume, tags, output folder and file-name pattern. **Preset** at the top applies a built-in or saved
+  dither, processing, volume and limiter, tags, output folder and file-name pattern. **Preset** at the top applies a built-in or saved
   preset, or saves the current settings (format and sound only; where files go stays as it is).
 - Each row shows the file's format, bit depth, rate, channels and length. After converting it shows the new
   file and its size; an ⓘ lists anything worth knowing (resampled because the format required it, level
-  changes, clipping). Right-click a row to show or play the converted file.
+  changes, silence trimmed, how hard the limiter worked, clipping). Right-click a row to show or play the converted file.
 - Up to eight files convert at once. Originals are never changed or replaced: output goes to a hidden temporary
   file next to its destination and is moved into place when finished; a name that would replace an original
   or another file in the batch gets a number ("Song 2.mp3").
@@ -86,9 +87,40 @@ numbers, comment, lyrics, copyright, ISRC, grouping, BPM, compilation, cover art
   surrounds at −3 dB, LFE left out) assuming WAV channel order. MP3, AAC and Opus hold two channels at most.
 - **Bit depth**: rounding to fewer bits uses TPDF dither (optionally with 3-tap noise shaping at 44.1/48 kHz).
   Dither is skipped when nothing changes, so a 16-bit WAV → FLAC → WAV round trip is bit-exact.
-- **Volume**: match loudness (EBU R128 / ITU-R BS.1770-4, measured on the converted signal) with a true-peak limit,
-  normalize sample peaks, or a fixed change. It is gain only: no compressor or limiter. A file that can't reach
-  the loudness target without passing the peak limit stays quieter, and the row says by how much.
+- **Volume**: match loudness (EBU R128 / ITU-R BS.1770-4, measured on the processed signal) with a true-peak limit,
+  normalize sample peaks, or a fixed change. On its own this is gain only: a file that can't reach the loudness
+  target without passing the peak limit stays quieter, and the row says by how much.
+- **Limiter** (optional, after the volume change): keeps true peaks (4× oversampled, as BS.1770 measures them) under
+  the peak limit. It looks 5 ms ahead so it turns the level down smoothly before each peak, recovers over about
+  80 ms, applies the same reduction to every channel, and adds no delay. With Match loudness every file reaches the
+  target: Recast measures what the limiter took off and makes up for it in one more pass.
+
+### Processing
+
+Optional steps between channel mixing and the volume change, always in this order:
+
+1. **Swap left and right**, **invert polarity**.
+2. **Remove DC offset**: a 5 Hz first-order high-pass that starts from the file's opening level, so an offset at
+   the start doesn't thump. The row says how large the offset was.
+3. **High-pass** and **low-pass**: fourth-order Butterworth (24 dB per octave, −3 dB at the set frequency). A
+   frequency too high for the sample rate is skipped, with a note.
+4. **Trim silence** at the start, the end or both: everything before the first and after the last sample at or
+   above the level (−60 dB unless set) goes. A file that's quiet throughout is left alone, with a note.
+5. **Fade in** and **fade out**: a raised-cosine curve, silent at the very first and last sample.
+6. **Add silence** before and after.
+
+Trimming and fading out read each file once before converting it to find where its sound ends, and matching
+loudness or peaks reads it once more, so these are slower than a plain conversion (about 2.5× for a 5-minute file
+with everything on).
+
+**Same as Source** keeps each file's format instead of converting: lossless files keep their bit depth, compressed
+files are encoded again at about their bit rate (and lose a little quality, as any re-encoding does; the row says
+so). Files in a format Recast doesn't write are saved as WAV (Wave64, AU, Sound Designer II) or FLAC (MP2, AC-3
+and the rest). Next to the originals, the new files get a number ("Song 2.mp3").
+
+Built-in presets for processing: **Loudness Fix** (same format, −14 LUFS, limiter), **Voice Clean-up** (MP3 mono,
+80 Hz high-pass, trimmed, −16 LUFS, limiter) and **Game Sounds** (16-bit WAV at 48 kHz, trimmed with short fades,
+peaks at −1 dB).
 
 ## Build and run
 
@@ -104,7 +136,7 @@ Requires macOS 26 (Liquid Glass) and Xcode 26 or newer; the script uses Xcode's 
 
 The repository describes its build in `omso-build.json`: `build.sh`, the engine tests (`test.sh`), then
 `Recast --self-test`, which converts a generated, tagged 24-bit file to every format and checks lengths, tags,
-cover art, bit-exact lossless audio and loudness matching. **Build & Install** copies `Recast.app` into
+cover art, bit-exact lossless audio, loudness matching and processing (trim, fades, filters, limiter). **Build & Install** copies `Recast.app` into
 `/Applications/omso`.
 
 Command line (same engine, no window):
@@ -112,6 +144,7 @@ Command line (same engine, no window):
 ```sh
 build/Recast.app/Contents/MacOS/Recast --convert FILE|FOLDER… --format mp3 [--out FOLDER] [--bitrate 320] …
 build/Recast.app/Contents/MacOS/Recast --convert ~/Music/Album --preset podcast --out ~/Desktop/Episodes
+build/Recast.app/Contents/MacOS/Recast --convert ~/Takes --format same --trim -55 --highpass 80 --loudness -16 --limit -1 --out ~/Desktop/Clean
 build/Recast.app/Contents/MacOS/Recast --info FILE…        # format, loudness, true peak and tags
 build/Recast.app/Contents/MacOS/Recast --self-test FOLDER
 build/Recast.app/Contents/MacOS/Recast --help              # every option
@@ -165,6 +198,10 @@ them) and check: bit-exact lossless round trips in every lossless format, dither
 against the source (correlation and alignment), resampling, channel mixing, loudness measurement against the
 BS.1770 reference tone and normalization, clipping reports, tags and cover art through every format, M4A chunk
 offsets when large cover art moves the audio, very short files, file naming and collisions, and settings storage.
+Processing tests check trimming to the exact sample, fade curves and added silence, filter response at and around
+the set frequency, DC offset removal, swapping and inverting, the limiter (true peak under the limit, no delay,
+untouched below the limit), loudness with the limiter reaching its target, processing in every format, Same as
+Source, and presets saved before processing existed.
 
 ## Known limits
 
@@ -187,7 +224,9 @@ Sources/RecastCore/         engine, no UI
   Probe.swift               reading file details; decoding and resampling (ExtAudioFile)
   DSP.swift                 channel mixing, dither and noise shaping
   Loudness.swift            BS.1770 loudness, sample and true peak
-  Converter.swift           one file: plan, analyse, encode, tag, move into place
+  Effects.swift             processing: swap/invert, DC, filters, trim, fades, silence, limiter
+  SameFormat.swift          "Same as Source": each file's own format and about its bit rate
+  Converter.swift           one file: plan, scan, analyse, process, encode, tag, move into place
   OutputPlanner.swift       output names and folders, collisions, folder scanning
   Encoders/                 Core Audio, FLAC (short-file fallback), LAME MP3, libvorbis and Opus-in-Ogg
   Tags/                     ID3, Vorbis comments/FLAC, MP4, WAV/AIFF chunks

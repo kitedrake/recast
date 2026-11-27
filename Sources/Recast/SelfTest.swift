@@ -61,6 +61,34 @@ enum SelfTest {
             let level = try AudioAnalysis.measure(podcast.output)
             expect(abs(level.loudness + 16) < 0.5, String(format: "loudness matching: %.2f LUFS instead of -16", level.loudness))
             print(String(format: "ok loudness: %.2f LUFS, true peak %.2f dBTP", level.loudness, level.truePeak))
+
+            // Processing: the test file with a click every half second and silence around it, trimmed, faded, filtered
+            // and made louder, with the limiter catching the clicks.
+            let padded = folder.appendingPathComponent("Self Test padded.wav")
+            let silence = [Float](repeating: 0, count: 22050)
+            let clicked = samples.map { channel in channel.enumerated().map { index, value in index % 22050 < 20 ? 0.95 : value } }
+            try writeWAV(clicked.map { silence + $0 + silence }, rate: rate, to: padded)
+            var processing = ConversionSettings()
+            processing.keepFormat = true
+            processing.trim = .both
+            processing.fadeInMS = 10
+            processing.fadeOutMS = 100
+            processing.highPass = true
+            processing.removeDC = true
+            processing.volume = .loudness
+            processing.loudnessTarget = -6
+            processing.limiter = true
+            let processedURL = folder.appendingPathComponent("Self Test processed.wav")
+            let processed = try Converter.convert(input: padded, to: processedURL, settings: processing)
+            let processedInfo = try AudioProbe.info(processed.output)
+            let processedLevel = try AudioAnalysis.measure(processed.output)
+            expect(processedInfo.bitDepth == 24, "processing: \(processedInfo.summary) instead of the source's 24-bit WAV")
+            // The high-pass filter rings on a little after the sound stops, so the end trim keeps a few milliseconds more.
+            expect(processedInfo.duration > 1.99 && processedInfo.duration < 2.06, "processing: \(processedInfo.duration) s after trimming instead of 2 s")
+            expect(abs(processedLevel.loudness + 6) < 0.3, String(format: "processing: %.2f LUFS instead of -6", processedLevel.loudness))
+            expect(processedLevel.truePeak < -0.9, String(format: "processing: true peak %.2f dBTP over the -1 dBTP limit", processedLevel.truePeak))
+            expect(processed.notes.contains { $0.hasPrefix("The limiter held peaks") }, "processing: the limiter didn't work (\(processed.notes))")
+            print(String(format: "ok processing: %.3f s, %.2f LUFS, true peak %.2f dBTP", processedInfo.duration, processedLevel.loudness, processedLevel.truePeak))
         } catch {
             failures.append(error.localizedDescription)
         }

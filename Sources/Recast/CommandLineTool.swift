@@ -4,13 +4,13 @@ import RecastCore
 /// `Recast --convert …`, `--info …` and `--self-test`: the same engine without the window.
 enum CommandLineTool {
     static let usage = """
-    Recast — audio converter
+    Recast — audio converter and batch processor
 
       Recast --convert FILE|FOLDER… --format FORMAT [options]
       Recast --info FILE…
       Recast --self-test FOLDER
 
-    Formats: wav aiff flac alac caf mp3 aac vorbis opus
+    Formats: wav aiff flac alac caf mp3 aac vorbis opus, or same (each file keeps its format)
     Options:
       --out FOLDER            write into FOLDER (default: next to each original)
       --preset NAME           start from a built-in preset (name or start of it)
@@ -22,10 +22,21 @@ enum CommandLineTool {
       --loudness LUFS         match loudness (true-peak limit --peak-limit, default -1)
       --peak DB               normalize peaks
       --gain DB               change the level
+      --limit DBTP            true-peak limiter after the level change
       --no-dither             round without dither
       --name PATTERN          file name, e.g. "{track} {title}"
       --replace | --skip      when a file exists (default: keep both)
       --no-tags               don't copy tags
+    Processing (in this order, before the level change):
+      --swap                  swap left and right
+      --invert                invert polarity
+      --dc                    remove DC offset
+      --highpass HZ           cut below HZ (24 dB/octave)
+      --lowpass HZ            cut above HZ
+      --trim DB               trim silence below DB (dBFS) at both ends
+      --trim-start DB | --trim-end DB    at one end only
+      --fade-in MS | --fade-out MS
+      --pad-start MS | --pad-end MS      add silence
     """
 
     static func run(_ arguments: [String]) -> Int32 {
@@ -73,8 +84,16 @@ enum CommandLineTool {
             let argument = arguments[index]
             switch argument {
             case "--format":
-                guard let name = next(), let format = OutputFormat(rawValue: name.lowercased()) else { print("Unknown format.\n\n\(usage)"); return 1 }
-                settings.format = format
+                guard let name = next()?.lowercased() else { print(usage); return 1 }
+                if name == "same" {
+                    settings.keepFormat = true
+                } else if let format = OutputFormat(rawValue: name) {
+                    settings.keepFormat = false
+                    settings.format = format
+                } else {
+                    print("Unknown format.\n\n\(usage)")
+                    return 1
+                }
                 formatGiven = true
             case "--preset":
                 guard let name = next()?.lowercased(),
@@ -101,6 +120,28 @@ enum CommandLineTool {
             case "--peak-limit": settings.truePeakCeiling = next().flatMap(Double.init) ?? -1
             case "--peak": settings.volume = .peak; settings.peakTarget = next().flatMap(Double.init) ?? -1
             case "--gain": settings.volume = .gain; settings.gainDB = next().flatMap(Double.init) ?? 0
+            case "--limit": settings.limiter = true; settings.truePeakCeiling = next().flatMap(Double.init) ?? -1
+            case "--swap": settings.swapChannels = true
+            case "--invert": settings.invertPolarity = true
+            case "--dc": settings.removeDC = true
+            case "--highpass":
+                guard let hertz = next().flatMap(Double.init) else { print("--highpass takes a frequency in Hz."); return 1 }
+                settings.highPass = true; settings.highPassFrequency = hertz
+            case "--lowpass":
+                guard let hertz = next().flatMap(Double.init) else { print("--lowpass takes a frequency in Hz."); return 1 }
+                settings.lowPass = true; settings.lowPassFrequency = hertz
+            case "--trim", "--trim-start", "--trim-end":
+                guard let level = next().flatMap(Double.init) else { print("\(argument) takes a level in dB, e.g. -60."); return 1 }
+                settings.trim = argument == "--trim" ? .both : argument == "--trim-start" ? .start : .end
+                settings.trimThreshold = level
+            case "--fade-in", "--fade-out", "--pad-start", "--pad-end":
+                guard let milliseconds = next().flatMap(Double.init), milliseconds >= 0 else { print("\(argument) takes milliseconds."); return 1 }
+                switch argument {
+                case "--fade-in": settings.fadeInMS = milliseconds
+                case "--fade-out": settings.fadeOutMS = milliseconds
+                case "--pad-start": settings.padStartMS = milliseconds
+                default: settings.padEndMS = milliseconds
+                }
             case "--no-dither": settings.dither = false
             case "--name": settings.namePattern = next() ?? "{name}"
             case "--replace": settings.collision = .replace

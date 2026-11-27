@@ -14,6 +14,7 @@ struct SettingsInspector: View {
             }
             formatSection($model.settings)
             audioSection($model.settings)
+            processingSection($model.settings)
             volumeSection($model.settings)
             Section("Tags") {
                 Toggle("Copy tags", isOn: $model.settings.copyTags)
@@ -33,11 +34,17 @@ struct SettingsInspector: View {
     private func formatSection(_ settings: Binding<ConversionSettings>) -> some View {
         let value = settings.wrappedValue
         Section {
-            Picker("Format", selection: settings.format) {
-                Section("Lossless") { ForEach(OutputFormat.lossless) { Text($0.title).tag($0) } }
-                Section("Compressed") { ForEach(OutputFormat.compressed) { Text($0.title).tag($0) } }
+            Picker("Format", selection: Binding<OutputFormat?>(get: { value.keepFormat ? nil : value.format }, set: { format in
+                settings.wrappedValue.keepFormat = format == nil
+                if let format { settings.wrappedValue.format = format }
+            })) {
+                Text("Same as source").tag(OutputFormat?.none)
+                Section("Lossless") { ForEach(OutputFormat.lossless) { Text($0.title).tag(Optional($0)) } }
+                Section("Compressed") { ForEach(OutputFormat.compressed) { Text($0.title).tag(Optional($0)) } }
             }
-            switch value.format {
+            switch value.keepFormat ? nil : value.format {
+            case nil:
+                EmptyView()
             case .wav, .aiff, .caf, .flac, .alac:
                 Picker("Bit depth", selection: Binding(get: { value.selectedDepth }, set: { settings.wrappedValue.setDepth($0) })) {
                     ForEach(value.format.bitDepths) { Text($0.title).tag($0) }
@@ -97,6 +104,9 @@ struct SettingsInspector: View {
     }
 
     private func formatFooter(_ settings: ConversionSettings) -> String {
+        if settings.keepFormat {
+            return "Each file keeps its format: lossless files their bit depth, compressed files about their bit rate (encoding them again loses a little quality). Files in formats Recast can't write are saved as WAV or FLAC."
+        }
         switch settings.format {
         case .wav, .aiff, .caf, .alac:
             return settings.format.summary + " “Same as source” keeps each file's bit depth; compressed sources become 24-bit."
@@ -127,7 +137,7 @@ struct SettingsInspector: View {
     private func audioSection(_ settings: Binding<ConversionSettings>) -> some View {
         let value = settings.wrappedValue
         let allRates: [Double] = [8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000]
-        let rates = value.format.sampleRates.map { allowed in allRates.filter(allowed.contains) } ?? allRates
+        let rates = value.keepFormat ? allRates : value.format.sampleRates.map { allowed in allRates.filter(allowed.contains) } ?? allRates
         Section {
             Picker("Sample rate", selection: settings.sampleRate) {
                 Text("Same as source").tag(Double?.none)
@@ -135,7 +145,7 @@ struct SettingsInspector: View {
                 ForEach(rates, id: \.self) { rate in Text(ConversionSettings.rateText(rate)).tag(Double?.some(rate)) }
             }
             .onChange(of: value.format) { _, format in
-                if let rate = settings.wrappedValue.sampleRate, let allowed = format.sampleRates, !allowed.contains(rate) {
+                if !settings.wrappedValue.keepFormat, let rate = settings.wrappedValue.sampleRate, let allowed = format.sampleRates, !allowed.contains(rate) {
                     settings.wrappedValue.sampleRate = nil
                 }
             }
@@ -159,7 +169,50 @@ struct SettingsInspector: View {
     }
 
     private func usesIntegerSamples(_ settings: ConversionSettings) -> Bool {
-        settings.format.isLossless && settings.selectedDepth != .float32 && settings.selectedDepth != .int32
+        settings.keepFormat || (settings.format.isLossless && settings.selectedDepth != .float32 && settings.selectedDepth != .int32)
+    }
+
+    // MARK: Processing
+
+    @ViewBuilder
+    private func processingSection(_ settings: Binding<ConversionSettings>) -> some View {
+        let value = settings.wrappedValue
+        Section {
+            Picker("Trim silence", selection: settings.trim) {
+                ForEach(TrimMode.allCases) { Text($0.title).tag($0) }
+            }
+            if value.trim != .off {
+                LabeledContent("Silence below") {
+                    NumberField(value: settings.trimThreshold, range: -96...(-20), step: 6, unit: "dB")
+                }
+            }
+            LabeledContent("Fade in") { NumberField(value: settings.fadeInMS, range: 0...60000, step: 10, unit: "ms", width: 64) }
+            LabeledContent("Fade out") { NumberField(value: settings.fadeOutMS, range: 0...60000, step: 10, unit: "ms", width: 64) }
+            LabeledContent("High-pass") {
+                HStack(spacing: 8) {
+                    if value.highPass { NumberField(value: settings.highPassFrequency, range: 10...2000, step: 10, unit: "Hz") }
+                    Toggle("High-pass", isOn: settings.highPass).labelsHidden()
+                }
+            }
+            .help("Cuts rumble and handling noise below the frequency (24 dB per octave).")
+            LabeledContent("Low-pass") {
+                HStack(spacing: 8) {
+                    if value.lowPass { NumberField(value: Binding(get: { value.lowPassFrequency / 1000 }, set: { settings.wrappedValue.lowPassFrequency = $0 * 1000 }),
+                                                 range: 1...40, step: 0.5, unit: "kHz") }
+                    Toggle("Low-pass", isOn: settings.lowPass).labelsHidden()
+                }
+            }
+            .help("Cuts hiss and everything else above the frequency (24 dB per octave).")
+            Toggle("Remove DC offset", isOn: settings.removeDC)
+            LabeledContent("Add silence before") { NumberField(value: settings.padStartMS, range: 0...60000, step: 100, unit: "ms", width: 64) }
+            LabeledContent("Add silence after") { NumberField(value: settings.padEndMS, range: 0...60000, step: 100, unit: "ms", width: 64) }
+            Toggle("Swap left and right", isOn: settings.swapChannels)
+            Toggle("Invert polarity", isOn: settings.invertPolarity)
+        } header: {
+            Text("Processing")
+        } footer: {
+            Text("In this order: swap and invert, DC offset, filters, trim, fades, added silence; then the volume. Trimming cuts everything before the first and after the last sample above the level. Fades use a smooth curve that starts and ends silent.")
+        }
     }
 
     // MARK: Volume
@@ -196,9 +249,6 @@ struct SettingsInspector: View {
                         .help("Common targets")
                     }
                 }
-                LabeledContent("Peak limit") {
-                    NumberField(value: settings.truePeakCeiling, range: -6...0, step: 0.5, unit: "dBTP")
-                }
             case .peak:
                 LabeledContent("Peaks at") {
                     NumberField(value: settings.peakTarget, range: -20...0, step: 0.5, unit: "dB")
@@ -208,15 +258,32 @@ struct SettingsInspector: View {
                     NumberField(value: settings.gainDB, range: -40...40, step: 0.5, unit: "dB")
                 }
             }
+            Toggle("Limiter", isOn: settings.limiter)
+            if value.volume == .loudness || value.limiter {
+                LabeledContent("Peak limit") {
+                    NumberField(value: settings.truePeakCeiling, range: -6...0, step: 0.5, unit: "dBTP")
+                }
+            }
         } header: {
             Text("Volume")
         } footer: {
-            switch value.volume {
-            case .none: Text("Files keep their level.")
-            case .loudness: Text("Measures each file's loudness (EBU R128) and sets it to the target, without letting the peaks pass the limit. Nothing is compressed or limited: a file that can't get louder without going over stays a little quieter.")
-            case .peak: Text("Raises or lowers each file so its loudest sample sits at this level.")
-            case .gain: Text("The same change for every file. Samples pushed past full scale are clipped.")
-            }
+            Text(volumeFooter(value))
+        }
+    }
+
+    private func volumeFooter(_ settings: ConversionSettings) -> String {
+        let limiter = " The limiter keeps true peaks under the limit by turning the loudest moments down smoothly."
+        switch settings.volume {
+        case .none:
+            return settings.limiter ? "Files keep their level." + limiter : "Files keep their level."
+        case .loudness:
+            return settings.limiter
+                ? "Measures each file's loudness (EBU R128) and sets it to the target; the limiter keeps the true peaks under the limit, so every file reaches the target."
+                : "Measures each file's loudness (EBU R128) and sets it to the target, without letting the peaks pass the limit. Without the limiter, a file that can't get louder without going over stays a little quieter."
+        case .peak:
+            return "Raises or lowers each file so its loudest sample sits at this level." + (settings.limiter ? limiter : "")
+        case .gain:
+            return settings.limiter ? "The same change for every file." + limiter : "The same change for every file. Samples pushed past full scale are clipped."
         }
     }
 
@@ -282,9 +349,11 @@ struct SettingsInspector: View {
         example.album = "Album"
         example.track = 1
         example.date = "2024"
+        // With "same as source", show what happens to a WAV file.
+        let format = settings.keepFormat ? OutputFormat.wav : settings.format
         let name = OutputPlanner.fileName(pattern: settings.namePattern, input: URL(fileURLWithPath: "/Original Name.wav"),
-                                          tags: example, format: settings.format)
-        return "Example: “\(name).\(settings.format.fileExtension)”. Originals are never replaced; a file of the same name gets a number instead."
+                                          tags: example, format: format)
+        return "Example: “\(name).\(format.fileExtension)”. Originals are never replaced; a file of the same name gets a number instead."
     }
 }
 
@@ -294,6 +363,7 @@ struct NumberField: View {
     let range: ClosedRange<Double>
     let step: Double
     let unit: String
+    var width: CGFloat = 52
 
     var body: some View {
         HStack(spacing: 4) {
@@ -301,7 +371,7 @@ struct NumberField: View {
                       format: .number.precision(.fractionLength(0...1)))
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
-                .frame(width: 52)
+                .frame(width: width)
             Text(unit)
                 .foregroundStyle(.secondary)
             Stepper("", value: $value, in: range, step: step)
@@ -341,7 +411,7 @@ struct PresetMenu: View {
             Button("Save") { model.savePreset(named: name) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Saves the format, quality, audio, volume and tag settings. Where files go isn't part of a preset.")
+            Text("Saves the format, quality, audio, processing, volume and tag settings. Where files go isn't part of a preset.")
         }
     }
 

@@ -28,12 +28,19 @@ struct ConvertBar: View {
             Button("Save") { model.savePreset(named: presetName) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Saves the format, quality, audio, volume and tag settings. Where files go isn't part of a preset.")
+            Text("Saves the format, quality, audio, processing, volume and tag settings. Where files go isn't part of a preset.")
         }
     }
 
     private var formatMenu: some View {
         Menu {
+            Button {
+                model.settings.keepFormat = true
+            } label: {
+                if model.settings.keepFormat { Image(systemName: "checkmark") }
+                Text("Same as Source")
+                Text("Each file keeps its format. For processing.")
+            }
             Section("Lossless") {
                 ForEach(OutputFormat.lossless) { format in formatButton(format) }
             }
@@ -61,7 +68,8 @@ struct ConvertBar: View {
                 }
             }
         } label: {
-            Label(model.settings.format.title, systemImage: model.settings.format.isLossless ? "waveform" : "waveform.path")
+            Label(model.settings.keepFormat ? "Same Format" : model.settings.format.title,
+                  systemImage: model.settings.keepFormat ? "equal.circle" : model.settings.format.isLossless ? "waveform" : "waveform.path")
                 .fontWeight(.semibold)
         }
         .menuStyle(.button)
@@ -73,9 +81,10 @@ struct ConvertBar: View {
 
     private func formatButton(_ format: OutputFormat) -> some View {
         Button {
+            model.settings.keepFormat = false
             model.settings.format = format
         } label: {
-            if model.settings.format == format { Image(systemName: "checkmark") }
+            if !model.settings.keepFormat, model.settings.format == format { Image(systemName: "checkmark") }
             Text(format.title)
             Text(format.summary)
         }
@@ -93,7 +102,10 @@ struct ConvertBar: View {
     private var qualityMenu: some View {
         let settings = model.settings
         return Menu {
-            ForEach(settings.format.qualityChoices) { choice in
+            if settings.keepFormat {
+                Text("Lossless files keep their bit depth, compressed files about their bit rate.")
+            }
+            ForEach(settings.keepFormat ? [] : settings.format.qualityChoices) { choice in
                 Button {
                     model.settings = choice.applied(to: model.settings)
                 } label: {

@@ -14,8 +14,11 @@ public enum OutputPlanner {
     ]
 
     /// Where a file would go before checking for existing files. `sourceRoot` is the folder the file was dropped
-    /// with (nil for files dropped on their own); with "keep folder structure" its layout is recreated.
-    public static func plannedURL(for input: URL, sourceRoot: URL?, settings: ConversionSettings, tags: AudioTags) -> URL {
+    /// with (nil for files dropped on their own); with "keep folder structure" its layout is recreated. With "same as
+    /// source" the file's format decides the extension: pass its `info`, or the file is read to find it.
+    public static func plannedURL(for input: URL, sourceRoot: URL?, settings: ConversionSettings, tags: AudioTags,
+                                  info: AudioFileInfo? = nil) -> URL {
+        let format = settings.keepFormat ? settings.outputFormat(for: info ?? (try? AudioProbe.info(input))) : settings.format
         var directory = input.deletingLastPathComponent()
         if settings.destination == .folder, let path = settings.folderPath {
             directory = URL(fileURLWithPath: path, isDirectory: true)
@@ -28,8 +31,8 @@ public enum OutputPlanner {
                 }
             }
         }
-        let name = fileName(pattern: settings.namePattern, input: input, tags: tags, format: settings.format)
-        return directory.appendingPathComponent(name).appendingPathExtension(settings.format.fileExtension)
+        let name = fileName(pattern: settings.namePattern, input: input, tags: tags, format: format)
+        return directory.appendingPathComponent(name).appendingPathExtension(format.fileExtension)
     }
 
     public static func fileName(pattern: String, input: URL, tags: AudioTags, format: OutputFormat) -> String {

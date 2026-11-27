@@ -79,6 +79,7 @@ extension OutputFormat {
 extension ConversionSettings {
     /// A short description of the format's quality settings, e.g. "320 kbps" or "24-bit".
     public var qualitySummary: String {
+        if keepFormat { return "Same quality" }
         switch format {
         case .wav, .aiff, .caf, .flac, .alac:
             return selectedDepth == .match ? "Same bit depth" : selectedDepth.title
@@ -114,7 +115,22 @@ extension ConversionSettings {
         case .peak: parts.append("Peaks \(Self.trimmed(peakTarget)) dB")
         case .gain: parts.append(String(format: "%+.1f dB", gainDB))
         }
+        if limiter { parts.append("Limiter") }
+        if trim != .off { parts.append("Trim") }
+        if highPass { parts.append("High-pass \(Processing.frequencyText(highPassFrequency))") }
+        if lowPass { parts.append("Low-pass \(Processing.frequencyText(lowPassFrequency))") }
+        if removeDC { parts.append("DC removed") }
+        if fadeInMS > 0 || fadeOutMS > 0 { parts.append("Fades") }
+        if padStartMS > 0 || padEndMS > 0 { parts.append("Padded") }
+        if swapChannels { parts.append("Swapped") }
+        if invertPolarity { parts.append("Inverted") }
         return parts
+    }
+
+    /// Whether anything is set that processes the sound beyond format, rate, channels and level.
+    public var hasEffects: Bool {
+        limiter || trim != .off || highPass || lowPass || removeDC || fadeInMS > 0 || fadeOutMS > 0 || padStartMS > 0
+            || padEndMS > 0 || swapChannels || invertPolarity
     }
 
     /// Apple's 0–127 VBR quality in words.

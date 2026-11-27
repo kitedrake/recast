@@ -153,6 +153,23 @@ public enum VolumeMode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Which ends of a file lose their silence.
+public enum TrimMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case off, both, start, end
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .off: return "Off"
+        case .both: return "Start and end"
+        case .start: return "Start only"
+        case .end: return "End only"
+        }
+    }
+
+    public var trimsStart: Bool { self == .both || self == .start }
+    public var trimsEnd: Bool { self == .both || self == .end }
+}
+
 public enum Destination: String, Codable, Sendable {
     case nextToOriginal, folder
 }
@@ -209,6 +226,8 @@ public enum VorbisMode: String, Codable, CaseIterable, Identifiable, Sendable {
 /// Every choice that shapes one conversion. Stored as JSON; unknown or missing keys fall back to the defaults.
 public struct ConversionSettings: Codable, Equatable, Sendable {
     public var format: OutputFormat = .mp3
+    /// Each file keeps its own format (and about its bit rate); `format` is what the menus fall back to.
+    public var keepFormat = false
 
     // Lossless and PCM
     public var pcmDepth: BitDepth = .match
@@ -251,6 +270,24 @@ public struct ConversionSettings: Codable, Equatable, Sendable {
     public var truePeakCeiling = -1.0
     public var peakTarget = -1.0
     public var gainDB = 0.0
+    /// A true-peak limiter after the level change, at `truePeakCeiling`. With it, Match loudness reaches its target.
+    public var limiter = false
+
+    // Processing, applied after channel mixing and before the level change, in this order
+    public var swapChannels = false
+    public var invertPolarity = false
+    public var removeDC = false
+    public var highPass = false
+    public var highPassFrequency = 80.0
+    public var lowPass = false
+    public var lowPassFrequency = 16000.0
+    public var trim: TrimMode = .off
+    /// Samples below this level (dBFS) count as silence when trimming.
+    public var trimThreshold = -60.0
+    public var fadeInMS = 0.0
+    public var fadeOutMS = 0.0
+    public var padStartMS = 0.0
+    public var padEndMS = 0.0
 
     // Metadata
     public var copyTags = true
@@ -342,6 +379,18 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         self.isBuiltIn = isBuiltIn
     }
 
+    /// Reads saved presets, settings by settings: a preset saved before a setting existed keeps the default for it
+    /// (plain `Codable` decoding would drop every preset as soon as a key is missing).
+    public static func decodeList(_ data: Data) -> [Preset] {
+        guard let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        return entries.compactMap { entry in
+            guard let name = entry["name"] as? String, let id = (entry["id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+            let stored = (entry["settings"] as? [String: Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+            let settings = stored.map(ConversionSettings.decode) ?? ConversionSettings()
+            return Preset(id: id, name: name, settings: settings, isBuiltIn: entry["isBuiltIn"] as? Bool ?? false)
+        }
+    }
+
     public static let builtIn: [Preset] = {
         func make(_ id: String, _ name: String, _ edit: (inout ConversionSettings) -> Void) -> Preset {
             var settings = ConversionSettings()
@@ -374,6 +423,21 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
             },
             make("6A1C1F00-0000-4000-8000-000000000008", "Opus, 128 kbps") {
                 $0.format = .opus; $0.opusBitrate = 128
+            },
+            make("6A1C1F00-0000-4000-8000-000000000009", "Loudness Fix (same format, −14 LUFS, limiter)") {
+                $0.keepFormat = true; $0.format = .flac
+                $0.volume = .loudness; $0.loudnessTarget = -14; $0.truePeakCeiling = -1; $0.limiter = true
+            },
+            make("6A1C1F00-0000-4000-8000-00000000000A", "Voice Clean-up (MP3, mono, −16 LUFS, limiter)") {
+                $0.format = .mp3; $0.mp3Mode = .cbr; $0.mp3Bitrate = 96; $0.channels = .mono
+                $0.removeDC = true; $0.highPass = true; $0.highPassFrequency = 80
+                $0.trim = .both; $0.trimThreshold = -50; $0.fadeInMS = 10; $0.fadeOutMS = 50
+                $0.volume = .loudness; $0.loudnessTarget = -16; $0.truePeakCeiling = -1; $0.limiter = true
+            },
+            make("6A1C1F00-0000-4000-8000-00000000000B", "Game Sounds (WAV, 16-bit, trimmed, peaks −1 dB)") {
+                $0.format = .wav; $0.pcmDepth = .int16; $0.sampleRate = 48000
+                $0.removeDC = true; $0.trim = .both; $0.trimThreshold = -60; $0.fadeInMS = 2; $0.fadeOutMS = 10
+                $0.volume = .peak; $0.peakTarget = -1
             },
         ]
     }()

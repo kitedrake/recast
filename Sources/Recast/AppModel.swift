@@ -57,7 +57,7 @@ final class AppModel {
     init() {
         let defaults = UserDefaults.standard
         settings = defaults.data(forKey: "settings").map(ConversionSettings.decode) ?? ConversionSettings()
-        userPresets = (defaults.data(forKey: "presets")).flatMap { try? JSONDecoder().decode([Preset].self, from: $0) } ?? []
+        userPresets = defaults.data(forKey: "presets").map(Preset.decodeList) ?? []
         recentFolders = defaults.stringArray(forKey: "recentFolders") ?? []
         showInspector = defaults.bool(forKey: "showInspector")
     }
@@ -192,7 +192,8 @@ final class AppModel {
             items[index].notes = []
             items[index].progress = 0
             items[index].output = nil
-            let planned = OutputPlanner.plannedURL(for: items[index].url, sourceRoot: items[index].root, settings: settings, tags: tags)
+            let planned = OutputPlanner.plannedURL(for: items[index].url, sourceRoot: items[index].root, settings: settings, tags: tags,
+                                                   info: items[index].info)
             switch OutputPlanner.resolve(planned, input: items[index].url, policy: settings.collision, taken: taken) {
             case .write(let output):
                 taken.insert(OutputPlanner.pathKey(output))
