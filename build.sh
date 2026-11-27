@@ -53,7 +53,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>Recast</string>
   <key>CFBundleDisplayName</key><string>Recast</string>
-  <key>CFBundleIdentifier</key><string>local.recast.app</string>
+  <key>CFBundleIdentifier</key><string>com.kitedrake.recast</string>
   <key>CFBundleExecutable</key><string>Recast</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>

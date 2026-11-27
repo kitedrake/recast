@@ -9,6 +9,7 @@ enum Main {
         if ["--convert", "--info", "--self-test", "--help"].contains(arguments.first ?? "") {
             exit(CommandLineTool.run(arguments))
         }
+        PreferencesMigration.carryOver()   // settings saved under the earlier bundle ID
         RecastApp.main()
     }
 }
