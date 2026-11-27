@@ -6,23 +6,37 @@ import SwiftUI
 struct SettingsInspector: View {
     @Environment(AppModel.self) private var model
 
+    /// Snapshot mode scrolls the panel to a section by posting this with the section's ID ("top" or "processing").
+    static let scrollRequest = Notification.Name("RecastScrollSettings")
+
     var body: some View {
         @Bindable var model = model
+        ScrollViewReader { proxy in
+            form($model.settings)
+                .onReceive(NotificationCenter.default.publisher(for: Self.scrollRequest)) { note in
+                    if let id = note.object as? String { proxy.scrollTo(id, anchor: .top) }
+                }
+        }
+    }
+
+    private func form(_ settings: Binding<ConversionSettings>) -> some View {
         Form {
             Section {
                 LabeledContent("Preset") { PresetMenu() }
             }
-            formatSection($model.settings)
-            audioSection($model.settings)
-            processingSection($model.settings)
-            volumeSection($model.settings)
+            .id("top")
+            formatSection(settings)
+            audioSection(settings)
+            processingSection(settings)
+                .id("processing")
+            volumeSection(settings)
             Section("Tags") {
-                Toggle("Copy tags", isOn: $model.settings.copyTags)
-                Toggle("Copy cover art", isOn: $model.settings.copyArtwork)
-                    .disabled(!model.settings.copyTags)
-                Toggle("Keep original file dates", isOn: $model.settings.keepFileDates)
+                Toggle("Copy tags", isOn: settings.copyTags)
+                Toggle("Copy cover art", isOn: settings.copyArtwork)
+                    .disabled(!settings.wrappedValue.copyTags)
+                Toggle("Keep original file dates", isOn: settings.keepFileDates)
             }
-            outputSection($model.settings)
+            outputSection(settings)
         }
         .formStyle(.grouped)
         .disabled(model.isConverting)
@@ -191,7 +205,7 @@ struct SettingsInspector: View {
             LabeledContent("High-pass") {
                 HStack(spacing: 8) {
                     if value.highPass { NumberField(value: settings.highPassFrequency, range: 10...2000, step: 10, unit: "Hz") }
-                    Toggle("High-pass", isOn: settings.highPass).labelsHidden()
+                    Toggle("High-pass", isOn: settings.highPass).labelsHidden().toggleStyle(.switch)
                 }
             }
             .help("Cuts rumble and handling noise below the frequency (24 dB per octave).")
@@ -199,7 +213,7 @@ struct SettingsInspector: View {
                 HStack(spacing: 8) {
                     if value.lowPass { NumberField(value: Binding(get: { value.lowPassFrequency / 1000 }, set: { settings.wrappedValue.lowPassFrequency = $0 * 1000 }),
                                                  range: 1...40, step: 0.5, unit: "kHz") }
-                    Toggle("Low-pass", isOn: settings.lowPass).labelsHidden()
+                    Toggle("Low-pass", isOn: settings.lowPass).labelsHidden().toggleStyle(.switch)
                 }
             }
             .help("Cuts hiss and everything else above the frequency (24 dB per octave).")

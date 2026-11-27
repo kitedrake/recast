@@ -97,6 +97,11 @@ numbers, comment, lyrics, copyright, ISRC, grouping, BPM, compilation, cover art
 
 ### Processing
 
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/processing.png">
+  <img src="docs/screenshots/processing-dark.png" alt="Five files set to keep their format, with silence trimming, fades, an 80 Hz high-pass, DC offset removal and loudness matching with the limiter">
+</picture>
+
 Optional steps between channel mixing and the volume change, always in this order:
 
 1. **Swap left and right**, **invert polarity**.
