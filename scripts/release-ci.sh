@@ -108,7 +108,7 @@ if not record["notarized"]:
              f"From then on, {app} opens normally.\n\n"
              "On current macOS, right-clicking the app and choosing **Open** no longer skips this warning. "
              f"If you prefer Terminal: `xattr -dr com.apple.quarantine /Applications/{app}.app`")
-body += f"\n\nRequires macOS {minimum} or later on a Mac with Apple silicon."
+body += f"\n\nRequires macOS {minimum} or later. Runs on Apple silicon and Intel Macs."
 open(f"{out}/notes.md", "w", encoding="utf-8").write(body + "\n")
 PY
 rm -f "$out/notes.txt"

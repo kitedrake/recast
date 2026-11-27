@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds Recast.app into build/. Uses Xcode's toolchain when Xcode is installed (the Command Line Tools don't
-# include the macOS 26 SDK that SwiftUI's Liquid Glass needs).
+# Builds Recast.app into build/, universal (Apple silicon and Intel). Uses Xcode's toolchain when Xcode is installed
+# (the Command Line Tools don't include the macOS 26 SDK that SwiftUI's Liquid Glass needs).
 #
 # A plain ./build.sh makes a local build: ad-hoc signed, with no update feed, so it never checks for updates.
 # Release builds set (see "Updates and releases" in the README):
@@ -22,8 +22,11 @@ if { [ -n "$feed" ] && [ -z "$key" ]; } || { [ -z "$feed" ] && [ -n "$key" ]; };
 fi
 # The packages are public: --disable-keychain stops SwiftPM looking for github.com passwords in the Keychain when it
 # downloads Sparkle's framework, which makes macOS ask to use whatever GitHub credentials are saved there.
-xcrun swift build --disable-keychain -c release --product Recast
-bindir="$(xcrun swift build --disable-keychain -c release --show-bin-path)"
+# Universal: Apple silicon (arm64) and Intel (x86_64). With more than one --arch, SwiftPM builds with its Xcode-style
+# build system, which puts the products in another folder; --show-bin-path with the same flags names it.
+arch_flags="--arch arm64 --arch x86_64"
+xcrun swift build --disable-keychain $arch_flags -c release --product Recast
+bindir="$(xcrun swift build --disable-keychain $arch_flags -c release --show-bin-path)"
 app="build/Recast.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
@@ -90,4 +93,13 @@ sign_code "$framework/Versions/B/Autoupdate"
 sign_code "$framework/Versions/B/Updater.app"
 sign_code "$framework"
 sign_code "$app"
+# Every binary in the bundle must run on Apple silicon and Intel: each Mach-O file needs both architectures.
+binaries="$(find "$app" -type f -exec file {} + | sed -n -e '/(for architecture/d' -e 's/:[[:space:]]*Mach-O .*//p')"
+[ -n "$binaries" ] || { echo "Found no binaries to check in $app" >&2; exit 1; }
+echo "$binaries" | while IFS= read -r binary; do
+  archs="$(lipo -archs "$binary")"
+  for arch in arm64 x86_64; do
+    case " $archs " in *" $arch "*) ;; *) echo "$binary isn't universal (it has $archs)" >&2; exit 1 ;; esac
+  done
+done
 echo "Built $(pwd)/$app"

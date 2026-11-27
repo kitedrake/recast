@@ -35,13 +35,15 @@ licence (`Sources/COggVorbis/libvorbis-1.3.7/COPYING`).
 
 LAME is built as its own dynamic library, `libmp3lame.dylib` (`Packages/Lame`), which the app carries in
 `Contents/Frameworks` and links at launch; Recast's own binary contains none of LAME's code. Anyone can swap in
-their own build of LAME 3.100's interface (then re-sign the app). The app also carries LAME's licence
-(`LAME-COPYING.txt`) and `LAME-NOTICE.txt`, which says where the exact source is, as the LGPL asks.
+their own build of LAME 3.100's interface (universal like the bundled one, or at least for their Mac's processor;
+then re-sign the app). The app also carries LAME's licence (`LAME-COPYING.txt`) and `LAME-NOTICE.txt`, which says
+where the exact source is, as the LGPL asks.
 
 ## Download
 
 Download the newest preview from the [Releases page](https://github.com/kitedrake/recast/releases): the
-`Recast-<version>.zip` file under **Assets**. It needs macOS 26 or later on a Mac with Apple silicon.
+`Recast-<version>.zip` file under **Assets**. It needs macOS 26 or later and runs on
+both Apple silicon and Intel Macs.
 
 **Preview build.** Recast isn't signed or notarized by Apple yet, so macOS warns about it the first time you open
 it. To open it anyway:
@@ -91,7 +93,7 @@ numbers, comment, lyrics, copyright, ISRC, grouping, BPM, compilation, cover art
 ## Build and run
 
 ```sh
-./build.sh                       # builds build/Recast.app (ad-hoc signed, local use)
+./build.sh                       # builds build/Recast.app (universal, ad-hoc signed, local use)
 open build/Recast.app
 ```
 
