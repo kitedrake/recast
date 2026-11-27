@@ -86,17 +86,28 @@ fi
 
 # 5. What the website reads (update.json, attached to the release), and the release's description.
 python3 - "$out" "$version" "$MINIMUM_MACOS" "$(wc -c < "$archive" | tr -d ' ')" "$signature" \
-  "$([ "$identity" != "-" ] && echo true || echo false)" "$notarized" <<'PY'
+  "$([ "$identity" != "-" ] && echo true || echo false)" "$notarized" "$APP_NAME" <<'PY'
 import json, sys
-out, version, minimum, length, signature, signed, notarized = sys.argv[1:]
+out, version, minimum, length, signature, signed, notarized, app = sys.argv[1:]
 notes = [line.strip() for line in open(f"{out}/notes.txt", encoding="utf-8") if line.strip()]
 record = {"version": version, "minimum_macos": minimum, "notes": notes, "length": int(length),
           "signature": signature or None, "signed": signed == "true", "notarized": notarized == "true"}
 json.dump(record, open(f"{out}/update.json", "w", encoding="utf-8"), indent=2, ensure_ascii=False)
 body = "\n".join(f"- {n}" for n in notes)
 if not record["notarized"]:
-    body += ("\n\n**Preview build.** It isn't signed and notarized by Apple yet, so macOS blocks it at first: "
-             "open it once, then allow it in System Settings › Privacy & Security.")
+    # The same steps as the Download section of each app's README and the app pages on the website.
+    missing = "notarized" if record["signed"] else "signed or notarized"
+    body += (f"\n\n**Preview build.** {app} isn't {missing} by Apple yet, so macOS warns about it the first time "
+             "you open it. To open it anyway:\n\n"
+             f"1. Unzip the download and move {app} to your Applications folder.\n"
+             f"2. Open {app}. When macOS says it can't verify the app, click **Done**.\n"
+             "3. Open **System Settings › Privacy & Security**, scroll down to **Security** and click "
+             f"**Open Anyway** next to the message about {app}. The button shows for about an hour after you "
+             "tried to open the app.\n"
+             "4. Confirm with **Open Anyway** and your password or Touch ID when macOS asks. "
+             f"From then on, {app} opens normally.\n\n"
+             "On current macOS, right-clicking the app and choosing **Open** no longer skips this warning. "
+             f"If you prefer Terminal: `xattr -dr com.apple.quarantine /Applications/{app}.app`")
 body += f"\n\nRequires macOS {minimum} or later on a Mac with Apple silicon."
 open(f"{out}/notes.md", "w", encoding="utf-8").write(body + "\n")
 PY
