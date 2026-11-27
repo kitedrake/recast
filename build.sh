@@ -20,13 +20,18 @@ if { [ -n "$feed" ] && [ -z "$key" ]; } || { [ -z "$feed" ] && [ -n "$key" ]; };
   echo "Set both UPDATE_FEED_URL and UPDATE_PUBLIC_KEY, or neither." >&2
   exit 1
 fi
+# SwiftPM sandboxes its manifest builds; inside another sandbox (an automated check runner's, for example) that fails with
+# "sandbox_apply: Operation not permitted", so turn SwiftPM's own sandbox off there. Such a sandbox usually has no
+# network either, so use the packages SwiftPM already has cached (--skip-update) instead of fetching updates first.
 # The packages are public: --disable-keychain stops SwiftPM looking for github.com passwords in the Keychain when it
 # downloads Sparkle's framework, which makes macOS ask to use whatever GitHub credentials are saved there.
+spm_flags="--disable-keychain"
+if ! /usr/bin/sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then spm_flags="$spm_flags --disable-sandbox --skip-update"; fi
 # Universal: Apple silicon (arm64) and Intel (x86_64). With more than one --arch, SwiftPM builds with its Xcode-style
 # build system, which puts the products in another folder; --show-bin-path with the same flags names it.
 arch_flags="--arch arm64 --arch x86_64"
-xcrun swift build --disable-keychain $arch_flags -c release --product Recast
-bindir="$(xcrun swift build --disable-keychain $arch_flags -c release --show-bin-path)"
+xcrun swift build $spm_flags $arch_flags -c release --product Recast
+bindir="$(xcrun swift build $spm_flags $arch_flags -c release --show-bin-path)"
 app="build/Recast.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
