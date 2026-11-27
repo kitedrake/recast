@@ -93,6 +93,7 @@ enum Snapshot {
             if model.settings.plugins.count == 3 { model.settings.plugins[2].bypassed = true }
             model.settings.keepPluginTails = true
             model.loadInstalledEffects()
+            resize(1180, 760)
             await settle(300, for: "13-plugins", "13-plugins-dark")
             NotificationCenter.default.post(name: SettingsInspector.scrollRequest, object: "plugins")
             await settle(800, for: "13-plugins", "13-plugins-dark")

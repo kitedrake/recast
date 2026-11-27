@@ -122,6 +122,13 @@ with everything on).
 
 ### Audio Units
 
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/plugins.png">
+  <img src="docs/screenshots/plugins-dark.png" alt="Three of Apple's Audio Units in the chain, the reverb switched off, with effect tails kept">
+</picture>
+
+<img src="docs/screenshots/plugin-window.png" alt="Edit… opens the plugin's own window, here Apple's N-Band EQ" width="47%">
+
 **Add › Audio Unit** in the Audio Units section lists every effect installed on the Mac (Audio Units of the effect
 and music-effect types), by manufacturer. Each one in the list has **Edit…**, which opens the plugin's own window
 (or plain controls built from its parameters when it has none), an on/off switch, and a menu to move or remove it.
