@@ -62,14 +62,24 @@ jobs:
           gh release create "$GITHUB_REF_NAME" out/*.zip out/update.json \
             --title "$APP_NAME ${GITHUB_REF_NAME#v}" --notes-file out/notes.md $flags
 
+      # A release starts the site's deploy workflow, so kitedrake.com lists it right away. SITE_REPO names the site's
+      # repository and SITE_DISPATCH_TOKEN may run its workflows (Actions read and write on that repository only).
+      # A dry run only checks that the token reaches the site. Without them the site lists it at its next daily build.
       - name: Ask kitedrake.com to list the release
-        if: github.ref_type == 'tag'
         env:
           SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          SITE_REPO: ${{ secrets.SITE_REPO }}
         run: |
-          if [ -z "$SITE_DISPATCH_TOKEN" ]; then
-            echo "::notice::SITE_DISPATCH_TOKEN isn't set, so kitedrake.com lists the release at its next daily build."
+          if [ -z "$SITE_DISPATCH_TOKEN" ] || [ -z "$SITE_REPO" ]; then
+            echo "::notice::SITE_DISPATCH_TOKEN or SITE_REPO isn't set, so kitedrake.com lists releases at its next daily build."
             exit 0
           fi
-          curl -fsS -X POST -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/kitedrake/kitedrake-site/dispatches -d '{"event_type":"app-released"}'
+          workflow="https://api.github.com/repos/$SITE_REPO/actions/workflows/deploy.yml"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            curl -fsS -X POST -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "$workflow/dispatches" -d '{"ref":"main"}'
+          else
+            curl -fsS -o /dev/null -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "$workflow"
+            echo "The token reaches the site's deploy workflow."
+          fi
