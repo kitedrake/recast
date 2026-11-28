@@ -115,6 +115,14 @@ final class ProcessingTests: XCTestCase {
         // The 5 Hz filter shifts a 1 kHz tone by 0.3°, about 0.002 here; the first moments settle a little more.
         XCTAssertLessThan(zip(result, tone).map { abs($0 - $1) }.max()!, 0.006)
         XCTAssertLessThan(zip(result.dropFirst(4410), tone.dropFirst(4410)).map { abs($0 - $1) }.max()!, 0.0025)
+
+        // A hit soon after the start doesn't make the filter see an offset in the silence before it, which would stop
+        // that silence being trimmed.
+        let hit = thump()
+        let late = try write([[Float](repeating: 0, count: 2205) + hit], to: folder, "late.wav")
+        let trimmed = try Fixtures.convert(late, floatWAV { $0.removeDC = true; $0.trim = .start }, name: "late-trimmed")
+        XCTAssertTrue(trimmed.notes.contains { $0.hasPrefix("Trimmed silence: 50 ms from the start") }, "\(trimmed.notes)")
+        XCTAssertFalse(trimmed.notes.contains { $0.hasPrefix("Removed a DC offset") }, "\(trimmed.notes)")
     }
 
     func testSwapAndInvert() throws {
@@ -125,6 +133,84 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(swapped, [samples[1], samples[0]])
         let inverted = try Fixtures.read(Fixtures.convert(source, floatWAV { $0.invertPolarity = true }, name: "inverted").output).samples
         XCTAssertEqual(inverted, samples.map { $0.map { -$0 } })
+    }
+
+    /// A low thump: an 80 Hz swing that dies away within a tenth of a second, starting downwards.
+    private func thump(frames: Int = 22050, rate: Double = 44100) -> [Float] {
+        (0..<frames).map { index in
+            let t = Double(index) / rate
+            return Float(-0.8 * sin(2 * .pi * 80 * t) * exp(-t / 0.03))
+        }
+    }
+
+    /// The first sample at half the peak or more: which way the first strong swing goes.
+    private func firstSwing(_ samples: [Float]) -> Float {
+        let top = samples.map(abs).max() ?? 0
+        return samples.first { abs($0) >= top * 0.5 } ?? 0
+    }
+
+    func testAlignForLayering() throws {
+        let folder = try Fixtures.folder()
+        let hit = thump()
+        // The same thump twice: swinging down after 0.1 s of faint hiss (-80 dB), and turned over after 0.3 s of silence.
+        let hiss = (0..<4410).map { $0 % 2 == 0 ? Float(0.0001) : -0.0001 }
+        let down = try write([hiss + hit, hiss + hit.map { $0 * 0.6 }], to: folder, "down.wav")
+        let silence = [Float](repeating: 0, count: 13230)
+        let up = try write([silence + hit.map { -$0 }, silence + hit.map { -$0 * 0.6 }], to: folder, "up.wav")
+        let aligned = floatWAV { $0.alignForLayering = true }
+
+        let flipped = try Fixtures.convert(down, aligned, name: "down-aligned")
+        XCTAssertTrue(flipped.notes.contains("Flipped the polarity so the first strong swing goes up."), "\(flipped.notes)")
+        let kept = try Fixtures.convert(up, aligned, name: "up-aligned")
+        XCTAssertFalse(kept.notes.contains { $0.hasPrefix("Flipped") }, "\(kept.notes)")
+        let a = try Fixtures.read(flipped.output).samples, b = try Fixtures.read(kept.output).samples
+        // Both start where the thump does, on its first zero, swing up, and line up sample for sample, both channels
+        // together: layered, they add up. (The DC filter settles a little differently after the hiss.)
+        XCTAssertEqual(a[0].count, hit.count)
+        XCTAssertEqual(b[0].count, hit.count)
+        XCTAssertLessThan(abs(a[0][0]), 0.001)
+        XCTAssertGreaterThan(firstSwing(a[0]), 0)
+        for channel in 0..<2 {
+            XCTAssertLessThan(zip(a[channel], b[channel]).map { abs($0 - $1) }.max()!, 0.002, "channel \(channel)")
+        }
+
+        // With Invert polarity too, every first swing goes down instead.
+        let inverted = floatWAV { $0.alignForLayering = true; $0.invertPolarity = true }
+        let downInverted = try Fixtures.convert(down, inverted, name: "down-inverted")
+        let upInverted = try Fixtures.convert(up, inverted, name: "up-inverted")
+        XCTAssertTrue(downInverted.notes.contains("Flipped the polarity so the first strong swing goes down."), "\(downInverted.notes)")
+        XCTAssertFalse(upInverted.notes.contains { $0.hasPrefix("Flipped") }, "\(upInverted.notes)")
+        XCTAssertLessThan(firstSwing(try Fixtures.read(downInverted.output).samples[0]), 0)
+        XCTAssertLessThan(firstSwing(try Fixtures.read(upInverted.output).samples[0]), 0)
+
+        // Above a high trim level, plain trimming starts partway up the first swing; aligning goes back to its zero.
+        let plain = try Fixtures.read(Fixtures.convert(up, floatWAV { $0.trim = .start; $0.trimThreshold = -20 }, name: "plain").output).samples[0]
+        let zeroed = try Fixtures.read(Fixtures.convert(up, floatWAV { $0.alignForLayering = true; $0.trimThreshold = -20 }, name: "zeroed").output).samples[0]
+        XCTAssertGreaterThanOrEqual(plain[0], 0.1)
+        XCTAssertLessThan(abs(zeroed[0]), 0.001)
+        XCTAssertEqual(zeroed.count, hit.count)
+
+        // Aligning always trims the start and removes DC offset.
+        XCTAssertEqual(Fixtures.settings(.wav) { $0.alignForLayering = true }.appliedTrim, .start)
+        XCTAssertEqual(Fixtures.settings(.wav) { $0.alignForLayering = true; $0.trim = .end }.appliedTrim, .both)
+        XCTAssertTrue(Fixtures.settings(.wav) { $0.alignForLayering = true }.removesDCOffset)
+    }
+
+    func testAlignLeavesSwellsAlone() throws {
+        let folder = try Fixtures.folder()
+        // A tone that rises over a second: there's no hit to line up.
+        let swell: [Float] = (0..<44100).map { index in
+            let t = Double(index) / 44100
+            return Float(0.8 * t * sin(2 * Double.pi * 440 * t))
+        }
+        let source = try write([swell], to: folder, "swell.wav")
+        let outcome = try Fixtures.convert(source, floatWAV { $0.alignForLayering = true })
+        XCTAssertTrue(outcome.notes.contains("Polarity left as it is: there's no clear hit near the start."), "\(outcome.notes)")
+        XCTAssertFalse(outcome.notes.contains { $0.hasPrefix("Flipped") })
+        let result = try Fixtures.read(outcome.output).samples[0]
+        var agreement = 0.0
+        for (out, source) in zip(result.suffix(22050), swell.suffix(22050)) { agreement += Double(out) * Double(source) }
+        XCTAssertGreaterThan(agreement, 0, "not turned over")
     }
 
     func testLimiterHoldsTruePeaksWithoutDelay() throws {

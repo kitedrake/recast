@@ -36,6 +36,9 @@ enum CommandLineTool {
       --lowpass HZ            cut above HZ
       --trim DB               trim silence below DB (dBFS) at both ends
       --trim-start DB | --trim-end DB    at one end only
+      --align                 line one-shots up for layering: start on the zero crossing
+                              before the hit, first strong swing up (also removes DC
+                              offset and trims the start)
       --fade-in MS | --fade-out MS
       --pad-start MS | --pad-end MS      add silence
       --au NAME               an Audio Unit effect (see --list-au), after the filters; repeat for more
@@ -147,6 +150,7 @@ enum CommandLineTool {
             case "--swap": settings.swapChannels = true
             case "--invert": settings.invertPolarity = true
             case "--dc": settings.removeDC = true
+            case "--align": settings.alignForLayering = true
             case "--highpass":
                 guard let hertz = next().flatMap(Double.init) else { print("--highpass takes a frequency in Hz."); return 1 }
                 settings.highPass = true; settings.highPassFrequency = hertz

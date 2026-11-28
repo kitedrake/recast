@@ -136,7 +136,7 @@ public enum Converter {
         }
 
         if processing.needsScan {
-            let scanner = SilenceScanner(thresholdDB: settings.trimThreshold)
+            let scanner = processing.scanner()
             try read(processing.cleanUpEffects().effects) { scanner.process($0) }
             processing.record(scanner)
             notes += processing.notes.filter { !notes.contains($0) }

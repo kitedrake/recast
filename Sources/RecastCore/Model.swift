@@ -288,6 +288,9 @@ public struct ConversionSettings: Codable, Equatable, Sendable {
     public var fadeOutMS = 0.0
     public var padStartMS = 0.0
     public var padEndMS = 0.0
+    /// For one-shots that get layered: removes DC offset, trims the start to the zero crossing just before the hit,
+    /// and flips files whose first strong swing goes down (up when `invertPolarity` is on too).
+    public var alignForLayering = false
     /// Audio Unit effects, run after the filters and before trimming.
     public var plugins: [PluginEffect] = []
     /// Let plugins play out their tails (reverb, echoes) at the end instead of stopping at the file's length.
@@ -349,6 +352,15 @@ public struct ConversionSettings: Codable, Equatable, Sendable {
         value.namePattern = namePattern
         return value
     }
+
+    /// The trimming that happens: aligning for layering always trims the start.
+    public var appliedTrim: TrimMode {
+        guard alignForLayering else { return trim }
+        return trim.trimsEnd ? .both : .start
+    }
+
+    /// Whether DC offset is removed: aligning for layering always removes it.
+    public var removesDCOffset: Bool { removeDC || alignForLayering }
 
     public var selectedDepth: BitDepth {
         switch format {
@@ -438,9 +450,9 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
                 $0.trim = .both; $0.trimThreshold = -50; $0.fadeInMS = 10; $0.fadeOutMS = 50
                 $0.volume = .loudness; $0.loudnessTarget = -16; $0.truePeakCeiling = -1; $0.limiter = true
             },
-            make("6A1C1F00-0000-4000-8000-00000000000B", "Game Sounds (WAV, 16-bit, trimmed, peaks −1 dB)") {
+            make("6A1C1F00-0000-4000-8000-00000000000B", "Game Sounds (WAV, 16-bit, aligned, peaks −1 dB)") {
                 $0.format = .wav; $0.pcmDepth = .int16; $0.sampleRate = 48000
-                $0.removeDC = true; $0.trim = .both; $0.trimThreshold = -60; $0.fadeInMS = 2; $0.fadeOutMS = 10
+                $0.removeDC = true; $0.trim = .both; $0.trimThreshold = -60; $0.alignForLayering = true; $0.fadeOutMS = 10
                 $0.volume = .peak; $0.peakTarget = -1
             },
         ]

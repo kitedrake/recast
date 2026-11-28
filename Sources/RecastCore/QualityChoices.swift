@@ -116,12 +116,12 @@ extension ConversionSettings {
         case .gain: parts.append(String(format: "%+.1f dB", gainDB))
         }
         if limiter { parts.append("Limiter") }
-        if trim != .off { parts.append("Trim") }
+        if alignForLayering { parts.append("Aligned") } else if trim != .off { parts.append("Trim") }
         let plugins = plugins.filter { !$0.bypassed }
         if plugins.count == 1 { parts.append(plugins[0].name) } else if plugins.count > 1 { parts.append("\(plugins.count) Audio Units") }
         if highPass { parts.append("High-pass \(Processing.frequencyText(highPassFrequency))") }
         if lowPass { parts.append("Low-pass \(Processing.frequencyText(lowPassFrequency))") }
-        if removeDC { parts.append("DC removed") }
+        if removeDC, !alignForLayering { parts.append("DC removed") }
         if fadeInMS > 0 || fadeOutMS > 0 { parts.append("Fades") }
         if padStartMS > 0 || padEndMS > 0 { parts.append("Padded") }
         if swapChannels { parts.append("Swapped") }
@@ -131,7 +131,7 @@ extension ConversionSettings {
 
     /// Whether anything is set that processes the sound beyond format, rate, channels and level.
     public var hasEffects: Bool {
-        limiter || trim != .off || highPass || lowPass || removeDC || fadeInMS > 0 || fadeOutMS > 0 || padStartMS > 0
+        limiter || trim != .off || alignForLayering || highPass || lowPass || removeDC || fadeInMS > 0 || fadeOutMS > 0 || padStartMS > 0
             || padEndMS > 0 || swapChannels || invertPolarity || plugins.contains { !$0.bypassed }
     }
 

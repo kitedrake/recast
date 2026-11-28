@@ -35,12 +35,14 @@ final class ChannelFlip: AudioEffect {
 }
 
 /// Removes a constant offset with a first-order high-pass at 5 Hz. The filter starts as if the opening block's
-/// average had always been there, so an offset at the very start doesn't turn into a thump.
+/// median had always been there, so an offset at the very start doesn't turn into a thump. (The median, not the
+/// average: a short hit in the opening would move the average and leave a made-up offset in the silence before it.)
 final class DCBlocker: AudioEffect {
     private let coefficient: Double
     private var previousInput: [Double]
     private var previousOutput: [Double]
     private var sums: [Double]
+    private var medianSums: [Double]
     private var frames = 0
     private var started = false
 
@@ -49,6 +51,17 @@ final class DCBlocker: AudioEffect {
         previousInput = Array(repeating: 0, count: channels)
         previousOutput = previousInput
         sums = previousInput
+        medianSums = previousInput
+    }
+
+    /// The middle value of every `step`-th sample.
+    private static func median(_ samples: UnsafeMutableBufferPointer<Float>, step: Int) -> Double {
+        var picked = [Float]()
+        picked.reserveCapacity(samples.count / step + 1)
+        for index in Swift.stride(from: 0, to: samples.count, by: step) { picked.append(samples[index]) }
+        picked.sort()
+        let n = picked.count
+        return n % 2 == 1 ? Double(picked[n / 2]) : (Double(picked[n / 2 - 1]) + Double(picked[n / 2])) / 2
     }
 
     func process(_ block: inout [[Float]]) {
@@ -58,11 +71,10 @@ final class DCBlocker: AudioEffect {
             var x1 = previousInput[channel], y1 = previousOutput[channel], sum = 0.0
             let r = coefficient
             block[channel].withUnsafeMutableBufferPointer { samples in
-                if !started {
-                    var opening = 0.0
-                    for index in 0..<count { opening += Double(samples[index]) }
-                    x1 = opening / Double(count)
-                }
+                // Every sample of the opening block, about a thousand of each later one (only for the note).
+                let middle = Self.median(samples, step: started ? max(1, count / 1024) : 1)
+                medianSums[channel] += middle * Double(count)
+                if !started { x1 = middle }
                 for index in 0..<count {
                     let x = Double(samples[index])
                     sum += x
@@ -80,10 +92,13 @@ final class DCBlocker: AudioEffect {
         started = true
     }
 
-    /// The source's average level, largest channel, as a fraction of full scale.
+    /// The source's offset, largest channel, as a fraction of full scale: its average level, when that comes from a
+    /// steady offset. A short, lopsided sound in silence (a hit) has an average too, but the middle values of its
+    /// blocks stay at zero, so it counts as none.
     var offset: Double {
         guard frames > 0 else { return 0 }
-        return sums.map { abs($0) / Double(frames) }.max() ?? 0
+        let steady = medianSums.map { abs($0) / Double(frames) }.max() ?? 0
+        return steady < 0.0005 ? 0 : sums.map { abs($0) / Double(frames) }.max() ?? 0
     }
 }
 
@@ -363,9 +378,12 @@ final class SilenceScanner {
     private(set) var frames: Int64 = 0
     private(set) var first: Int64?
     private(set) var last: Int64?
+    /// When aligning for layering: where the hit starts and which way it swings.
+    let hit: HitScanner?
 
-    init(thresholdDB: Double) {
+    init(thresholdDB: Double, hit: HitScanner? = nil) {
         threshold = Float(pow(10, thresholdDB / 20))
+        self.hit = hit
     }
 
     func process(_ buffer: AVAudioPCMBuffer) {
@@ -378,7 +396,72 @@ final class SilenceScanner {
         }
         if first == nil, let index = (0..<count).first(where: loud) { first = frames + Int64(index) }
         if let index = (0..<count).reversed().first(where: loud) { last = frames + Int64(index) }
+        hit?.process(data, count: count, channels: channels, at: frames, onset: first)
         frames += Int64(count)
+    }
+}
+
+/// For one-shots: the zero crossing just before the sound starts, and which way its first strong swing goes.
+/// It follows the channels' average (the mid); when the channels mostly cancel, the loudest one decides the swing.
+final class HitScanner {
+    enum Swing: Equatable { case up, down, unclear }
+
+    /// How far before the start a zero crossing may be, and how long the opening looked at for the swing is.
+    private let reach: Int64
+    private let openingFrames: Int64
+    private var previousMid: Float?
+    private var crossing: Int64?
+    private(set) var start: Int64?
+    private var opening: [[Float]] = []
+    private var peak: Float = 0
+
+    init(sampleRate: Double) {
+        reach = Int64((sampleRate * 0.010).rounded())
+        openingFrames = max(1, Int64((sampleRate * 0.050).rounded()))
+    }
+
+    func process(_ data: UnsafePointer<UnsafeMutablePointer<Float>>, count: Int, channels: Int, at position: Int64, onset: Int64?) {
+        if opening.isEmpty { opening = Array(repeating: [], count: channels) }
+        for index in 0..<count {
+            let frame = position + Int64(index)
+            var mid: Float = 0
+            for channel in 0..<channels {
+                let sample = data[channel][index]
+                mid += sample
+                peak = max(peak, abs(sample))
+            }
+            mid /= Float(channels)
+            if start == nil {
+                // Up to and including the first loud frame: note the latest zero crossing, at whichever of the two
+                // frames around it is nearer zero.
+                if mid == 0 {
+                    crossing = frame
+                } else if let previousMid, (previousMid < 0) != (mid < 0) {
+                    crossing = abs(mid) <= abs(previousMid) ? frame : frame - 1
+                }
+                previousMid = mid
+                if let onset, frame == onset {
+                    start = crossing.map { onset - $0 <= reach ? $0 : onset } ?? onset
+                }
+            }
+            if let onset, frame >= onset, frame < onset + openingFrames {
+                for channel in 0..<channels { opening[channel].append(data[channel][index]) }
+            }
+        }
+    }
+
+    /// Which way the first strong swing goes: the first sample of the opening 50 ms at half its peak or more. It's
+    /// unclear when the opening is more than 12 dB under the file's peak (a swell, not a hit).
+    var swing: Swing {
+        let openingPeak = opening.map { $0.map(abs).max() ?? 0 }
+        guard let loudest = openingPeak.indices.max(by: { openingPeak[$0] < openingPeak[$1] }),
+              openingPeak[loudest] > 0, openingPeak[loudest] >= peak * 0.25 else { return .unclear }
+        let length = opening[0].count
+        var reference = (0..<length).map { index in opening.reduce(0) { $0 + $1[index] } / Float(opening.count) }
+        if (reference.map(abs).max() ?? 0) < openingPeak[loudest] * 0.25 { reference = opening[loudest] }
+        let top = reference.map(abs).max() ?? 0
+        guard let first = reference.first(where: { abs($0) >= top * 0.5 }) else { return .unclear }
+        return first < 0 ? .down : .up
     }
 }
 
@@ -394,6 +477,8 @@ struct Processing {
     private var kept: (start: Int64, end: Int64)?
     /// Set once the plugin pass has applied the clean-up effects (and the plugins) into a file the later passes read.
     var cleanedUp = false
+    /// From the scan, when aligning for layering: the file's polarity is turned over after trimming.
+    private var flipsPolarity = false
 
     init(settings: ConversionSettings, sampleRate: Double, channels: Int) {
         self.settings = settings
@@ -419,19 +504,25 @@ struct Processing {
     var fadeInFrames: Int64 { frames(settings.fadeInMS) }
     var fadeOutFrames: Int64 { frames(settings.fadeOutMS) }
     var padFrames: (start: Int, end: Int) { (Int(frames(settings.padStartMS)), Int(frames(settings.padEndMS))) }
+    var trim: TrimMode { settings.appliedTrim }
 
     /// Whether any effect before the level change is on.
     var isActive: Bool {
-        hasFlip || settings.removeDC || highPass != nil || lowPass != nil || settings.trim != .off
+        hasFlip || settings.removesDCOffset || highPass != nil || lowPass != nil || trim != .off
             || fadeInFrames > 0 || fadeOutFrames > 0 || padFrames.start > 0 || padFrames.end > 0 || !plugins.isEmpty
     }
 
     /// Trimming and fading out need to know where the file ends, so they read it once first.
-    var needsScan: Bool { settings.trim != .off || fadeOutFrames > 0 }
+    var needsScan: Bool { trim != .off || fadeOutFrames > 0 }
+
+    /// What the scan pass reads.
+    func scanner() -> SilenceScanner {
+        SilenceScanner(thresholdDB: settings.trimThreshold, hit: settings.alignForLayering ? HitScanner(sampleRate: sampleRate) : nil)
+    }
 
     /// Effects that change the level, so stored ReplayGain values no longer apply.
     var changesLevel: Bool {
-        settings.removeDC || highPass != nil || lowPass != nil || fadeInFrames > 0 || fadeOutFrames > 0 || !plugins.isEmpty
+        settings.removesDCOffset || highPass != nil || lowPass != nil || fadeInFrames > 0 || fadeOutFrames > 0 || !plugins.isEmpty
     }
 
     private func frames(_ milliseconds: Double) -> Int64 {
@@ -444,7 +535,7 @@ struct Processing {
         var effects: [AudioEffect] = []
         if hasFlip { effects.append(ChannelFlip(swap: settings.swapChannels, invert: settings.invertPolarity)) }
         var dc: DCBlocker?
-        if settings.removeDC {
+        if settings.removesDCOffset {
             let blocker = DCBlocker(channels: channels, sampleRate: sampleRate)
             effects.append(blocker)
             dc = blocker
@@ -458,7 +549,8 @@ struct Processing {
     /// Every effect before the level change, fresh for one pass.
     func effects() -> (effects: [AudioEffect], dc: DCBlocker?) {
         var (effects, dc) = cleanUpEffects()
-        if let kept, settings.trim != .off { effects.append(Trim(start: kept.start, end: kept.end)) }
+        if let kept, trim != .off { effects.append(Trim(start: kept.start, end: kept.end)) }
+        if flipsPolarity { effects.append(ChannelFlip(swap: false, invert: true)) }
         if fadeInFrames > 0 || fadeOutFrames > 0 {
             effects.append(Fade(inFrames: fadeInFrames, outFrames: fadeOutFrames, total: kept.map { $0.end - $0.start }))
         }
@@ -474,16 +566,29 @@ struct Processing {
     /// Records where the sound is, from a scan over `cleanUpEffects()`.
     mutating func record(_ scan: SilenceScanner) {
         var start: Int64 = 0, end = scan.frames
-        if settings.trim != .off {
+        if trim != .off {
             if let first = scan.first, let last = scan.last {
-                if settings.trim.trimsStart { start = first }
-                if settings.trim.trimsEnd { end = last + 1 }
+                if trim.trimsStart { start = scan.hit?.start ?? first }
+                if trim.trimsEnd { end = last + 1 }
                 var parts: [String] = []
                 if start > 0 { parts.append("\(durationText(start)) from the start") }
                 if end < scan.frames { parts.append("\(durationText(scan.frames - end)) from the end") }
                 if !parts.isEmpty { notes.append("Trimmed silence: \(parts.joined(separator: " and ")).") }
             } else if scan.frames > 0 {
                 notes.append(String(format: "Nothing trimmed: the whole file is below %.0f dB.", settings.trimThreshold))
+            }
+        }
+        if let hit = scan.hit, scan.first != nil {
+            // The scan heard the file after Invert polarity, which then asks for the swing to go down instead.
+            let wanted: HitScanner.Swing = settings.invertPolarity ? .down : .up
+            switch hit.swing {
+            case .unclear:
+                notes.append("Polarity left as it is: there's no clear hit near the start.")
+            case wanted:
+                break
+            default:
+                flipsPolarity = true
+                notes.append("Flipped the polarity so the first strong swing goes \(wanted == .up ? "up" : "down").")
             }
         }
         kept = (start, end)

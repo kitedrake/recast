@@ -2,8 +2,8 @@
 
 A macOS app (SwiftUI, Liquid Glass) for converting and batch-processing audio files. Drop files or whole folders
 on the window (or the Dock icon), pick a format, press **Convert**. Everything else is optional: Recast can also
-trim, fade, filter, level and limit every file on the way, run it through Audio Unit effects, or keep each file's
-format and only process it.
+trim, fade, filter, level and limit every file on the way, line up one-shots for layering, run it through Audio Unit
+effects, or keep each file's format and only process it.
 
 - **Bottom bar**: the format (or **Same as Source**), a quality menu with the usual choices for that format, and where the files go
   (**Next to Originals** or a folder, with recent folders, "keep folder structure" and what to do when a file
@@ -112,9 +112,24 @@ Optional steps between channel mixing and the volume change, always in this orde
    frequency too high for the sample rate is skipped, with a note.
 4. **Audio Units**: effects installed on the Mac, top to bottom (see below).
 5. **Trim silence** at the start, the end or both: everything before the first and after the last sample at or
-   above the level (−60 dB unless set) goes. A file that's quiet throughout is left alone, with a note.
+   above the level (−60 dB unless set) goes. A file that's quiet throughout is left alone, with a note. With
+   **Align for layering**, the start moves back to the zero crossing before the hit and the file may be turned over
+   (see below).
 6. **Fade in** and **fade out**: a raised-cosine curve, silent at the very first and last sample.
 7. **Add silence** before and after.
+
+**Align for layering** is for one-shots (hits, footsteps, drum samples) that get played or stacked together, so
+they add up instead of partly cancelling. It turns on DC offset removal and trimming at the start, and then:
+
+- starts each file on the zero crossing just before the hit, up to 10 ms before the first sample above the level
+  (plain trimming starts on that sample, which can be partway up a swing, and click);
+- turns files over whose first strong swing goes down, so it goes up in every file (down with **Invert polarity**).
+  The first strong swing is the first sample of the opening 50 ms at half its peak or more, from the channels'
+  average. A file whose opening is more than 12 dB under its loudest point (a swell or an ambience, not a hit) keeps
+  its polarity, with a note.
+
+Turning a sound over doesn't change how it sounds on its own, only how it combines with others. Layers still
+interact through their pitch and timing, so the final blend is up to the ear.
 
 Trimming and fading out read each file once before converting it to find where its sound ends, and matching
 loudness or peaks reads it once more, so these are slower than a plain conversion (about 2.5× for a 5-minute file
@@ -153,8 +168,8 @@ so). Files in a format Recast doesn't write are saved as WAV (Wave64, AU, Sound 
 and the rest). Next to the originals, the new files get a number ("Song 2.mp3").
 
 Built-in presets for processing: **Loudness Fix** (same format, −14 LUFS, limiter), **Voice Clean-up** (MP3 mono,
-80 Hz high-pass, trimmed, −16 LUFS, limiter) and **Game Sounds** (16-bit WAV at 48 kHz, trimmed with short fades,
-peaks at −1 dB).
+80 Hz high-pass, trimmed, −16 LUFS, limiter) and **Game Sounds** (16-bit WAV at 48 kHz, trimmed and aligned for
+layering, a short fade-out, peaks at −1 dB).
 
 ## Build and run
 
@@ -180,6 +195,7 @@ Command line (same engine, no window):
 build/Recast.app/Contents/MacOS/Recast --convert FILE|FOLDER… --format mp3 [--out FOLDER] [--bitrate 320] …
 build/Recast.app/Contents/MacOS/Recast --convert ~/Music/Album --preset podcast --out ~/Desktop/Episodes
 build/Recast.app/Contents/MacOS/Recast --convert ~/Takes --format same --trim -55 --highpass 80 --loudness -16 --limit -1 --out ~/Desktop/Clean
+build/Recast.app/Contents/MacOS/Recast --convert ~/SFX/Impacts --format wav --bits 16 --trim -60 --align --peak -1 --out ~/Desktop/Layers
 build/Recast.app/Contents/MacOS/Recast --list-au          # installed Audio Unit effects
 build/Recast.app/Contents/MacOS/Recast --convert ~/Stems --format wav --au "AUNBandEQ" --au-preset Tilt.aupreset --au "Apple: AUReverb2" --keep-tails
 build/Recast.app/Contents/MacOS/Recast --info FILE…        # format, loudness, true peak and tags
@@ -236,7 +252,9 @@ against the source (correlation and alignment), resampling, channel mixing, loud
 BS.1770 reference tone and normalization, clipping reports, tags and cover art through every format, M4A chunk
 offsets when large cover art moves the audio, very short files, file naming and collisions, and settings storage.
 Processing tests check trimming to the exact sample, fade curves and added silence, filter response at and around
-the set frequency, DC offset removal, swapping and inverting, the limiter (true peak under the limit, no delay,
+the set frequency, DC offset removal, swapping and inverting, aligning for layering (a thump that swings down and
+the same thump turned over come out identical, starting on the zero crossing; Invert polarity; swells left alone),
+the limiter (true peak under the limit, no delay,
 untouched below the limit), loudness with the limiter reaching its target, processing in every format, Same as
 Source, and presets saved before processing existed. Audio Unit tests use Apple's own effects: settings reaching
 the plugin exactly (a 100-sample delay), plugin delay taken out, plugins running before trimming, tails cut or

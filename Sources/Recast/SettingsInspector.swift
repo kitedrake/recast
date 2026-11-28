@@ -194,10 +194,13 @@ struct SettingsInspector: View {
     private func processingSection(_ settings: Binding<ConversionSettings>) -> some View {
         let value = settings.wrappedValue
         Section {
-            Picker("Trim silence", selection: settings.trim) {
-                ForEach(TrimMode.allCases) { Text($0.title).tag($0) }
+            Toggle("Align for layering", isOn: settings.alignForLayering)
+                .help("For one-shots such as hits, footsteps and drums: starts each file on the zero crossing just before the hit and flips it if its first strong swing goes down, so layered sounds add up instead of cancelling. Removes DC offset and trims the start too.")
+            // Aligning always trims the start, so the picker shows what happens and offers only what's possible.
+            Picker("Trim silence", selection: Binding(get: { value.appliedTrim }, set: { settings.wrappedValue.trim = $0 })) {
+                ForEach(TrimMode.allCases.filter { !value.alignForLayering || $0.trimsStart }) { Text($0.title).tag($0) }
             }
-            if value.trim != .off {
+            if value.appliedTrim != .off {
                 LabeledContent("Silence below") {
                     NumberField(value: settings.trimThreshold, range: -96...(-20), step: 6, unit: "dB")
                 }
@@ -219,7 +222,8 @@ struct SettingsInspector: View {
                 }
             }
             .help("Cuts hiss and everything else above the frequency (24 dB per octave).")
-            Toggle("Remove DC offset", isOn: settings.removeDC)
+            Toggle("Remove DC offset", isOn: Binding(get: { value.removesDCOffset }, set: { settings.wrappedValue.removeDC = $0 }))
+                .disabled(value.alignForLayering)
             LabeledContent("Add silence before") { NumberField(value: settings.padStartMS, range: 0...60000, step: 100, unit: "ms", width: 64) }
             LabeledContent("Add silence after") { NumberField(value: settings.padEndMS, range: 0...60000, step: 100, unit: "ms", width: 64) }
             Toggle("Swap left and right", isOn: settings.swapChannels)
@@ -227,7 +231,7 @@ struct SettingsInspector: View {
         } header: {
             Text("Processing")
         } footer: {
-            Text("In this order: swap and invert, DC offset, filters, Audio Units, trim, fades, added silence; then the volume. Trimming cuts everything before the first and after the last sample above the level. Fades use a smooth curve that starts and ends silent.")
+            Text("In this order: swap and invert, DC offset, filters, Audio Units, trim, fades, added silence; then the volume. Trimming cuts everything before the first and after the last sample above the level. Fades use a smooth curve that starts and ends silent. Align for layering is for one-shots: each file starts on the zero crossing just before the hit, and its first strong swing goes up (down with Invert polarity).")
         }
     }
 
